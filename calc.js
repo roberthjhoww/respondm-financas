@@ -54,7 +54,33 @@ function extratoDivida(data,dividaId){
   return (data.lancamentos||[]).filter(l=>l.dividaId===dividaId).sort((a,b)=>b.data.localeCompare(a.data));
 }
 
-const api={saldoConta,saldoTotal,saldoDivida,lancamentosDoMes,resumoMes,despesasPorCategoria,extratoConta,extratoDivida};
+// Resumo de parcelas de uma dívida (opcional — só se ela tiver `parcelas` cadastrado).
+// ponytail: cada lançamento vinculado à dívida conta como "1 parcela paga", seja qual for o valor
+// (cheia ou com desconto de antecipação). Não rastreia qual número de parcela foi pago, só a contagem.
+function resumoParcelas(data,dividaId){
+  const divida=(data.dividas||[]).find(d=>d.id===dividaId);
+  if(!divida||!divida.parcelas)return null;
+  const pagas=extratoDivida(data,dividaId).length;
+  const restantes=Math.max(0,divida.parcelas-pagas);
+  const valorParcela=num(divida.valorParcela);
+  const valorNominalRestante=restantes*valorParcela;
+  const desconto=num(divida.descontoAntecipacao);
+  const economia=valorNominalRestante*desconto/100;
+  return{parcelas:divida.parcelas,pagas,restantes,valorParcela,valorNominalRestante,desconto,economia,valorQuitacaoAntecipada:valorNominalRestante-economia};
+}
+
+// Dias até o próximo vencimento de um dia fixo do mês (conta a vencer: internet, energia...).
+// Se o dia já passou este mês, calcula pro próximo mês. hojeISO é injetável pra dar pra testar.
+function diasAteVencimento(dia,hojeISO){
+  if(!dia)return null;
+  const hoje=hojeISO?new Date(hojeISO+"T00:00:00"):new Date();
+  hoje.setHours(0,0,0,0);
+  let candidato=new Date(hoje.getFullYear(),hoje.getMonth(),dia);
+  if(candidato<hoje)candidato=new Date(hoje.getFullYear(),hoje.getMonth()+1,dia);
+  return Math.round((candidato-hoje)/86400000);
+}
+
+const api={saldoConta,saldoTotal,saldoDivida,lancamentosDoMes,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,diasAteVencimento,resumoParcelas};
 if(typeof module!=="undefined"&&module.exports)module.exports=api;
 else root.FinCalc=api;
 })(typeof window!=="undefined"?window:this);

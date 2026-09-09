@@ -50,7 +50,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;bord
 <body><div id="root"></div>
 <script type="text/babel">
 const{useState,useEffect,useMemo}=React;
-const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida}=window.FinCalc;
+const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,diasAteVencimento,resumoParcelas}=window.FinCalc;
 const STORAGE_KEY="respondm_financas_v1";
 const AUTHORIZED_EMAILS=["roberthjhow@gmail.com"]; // app pessoal — só Robert
 const CAT_RECEITA=["Salário/Pró-labore","Freelance/Extra","Investimentos","Outros"];
@@ -103,27 +103,47 @@ function LoginScreen(){
   );
 }
 
-function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onUpdate,onDelete,expandido,setExpandido,cor}){
-  const[form,setForm]=useState(null); // {nome,saldoInicial} ou null — criação
+const FORM_ENTIDADE_VAZIO={nome:"",saldoInicial:"",parcelas:"",valorParcela:"",descontoAntecipacao:""};
+function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,onAdd,onUpdate,onDelete,expandido,setExpandido,cor}){
+  const[form,setForm]=useState(null); // FORM_ENTIDADE_VAZIO ou null — criação
   const[editId,setEditId]=useState(null); // id em edição
-  const[editForm,setEditForm]=useState({nome:"",saldoInicial:""});
-  function startEdit(it){setEditId(it.id);setEditForm({nome:it.nome,saldoInicial:String(it.saldoInicial)});setExpandido(null);}
+  const[editForm,setEditForm]=useState(FORM_ENTIDADE_VAZIO);
+  const ehDivida=tipoLabel==="dívida";
+  function startEdit(it){
+    setEditId(it.id);
+    setEditForm({nome:it.nome,saldoInicial:String(it.saldoInicial),parcelas:it.parcelas?String(it.parcelas):"",valorParcela:it.valorParcela?String(it.valorParcela):"",descontoAntecipacao:it.descontoAntecipacao?String(it.descontoAntecipacao):""});
+    setExpandido(null);
+  }
+  function montarPayload(f){
+    const p={nome:f.nome.trim(),saldoInicial:Number(f.saldoInicial)||0};
+    if(ehDivida){p.parcelas=f.parcelas?Number(f.parcelas):null;p.valorParcela=f.valorParcela?Number(f.valorParcela):null;p.descontoAntecipacao=f.descontoAntecipacao?Number(f.descontoAntecipacao):null;}
+    return p;
+  }
   function saveEdit(){
     if(!editForm.nome.trim())return;
-    onUpdate(editId,{nome:editForm.nome.trim(),saldoInicial:Number(editForm.saldoInicial)||0});
+    onUpdate(editId,montarPayload(editForm));
     setEditId(null);
   }
   return(
     <Card style={{marginTop:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>{titulo}</div>
-        <Btn size="sm" variant="secondary" onClick={()=>setForm(form?null:{nome:"",saldoInicial:""})}>{form?"Cancelar":"+ Nova"}</Btn>
+        <Btn size="sm" variant="secondary" onClick={()=>setForm(form?null:{...FORM_ENTIDADE_VAZIO})}>{form?"Cancelar":"+ Nova"}</Btn>
       </div>
       {form&&(
-        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-          <div style={{flex:2,minWidth:140}}><FInput placeholder="Nome" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></div>
-          <div style={{flex:1,minWidth:100}}><FInput type="number" placeholder={tipoLabel==="dívida"?"Valor devido":"Saldo atual"} value={form.saldoInicial} onChange={e=>setForm({...form,saldoInicial:e.target.value})}/></div>
-          <Btn onClick={()=>{if(!form.nome.trim())return;onAdd({nome:form.nome.trim(),saldoInicial:Number(form.saldoInicial)||0});setForm(null);}}>Salvar</Btn>
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:ehDivida?8:0}}>
+            <div style={{flex:2,minWidth:140}}><FInput placeholder="Nome" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></div>
+            <div style={{flex:1,minWidth:100}}><FInput type="number" placeholder={ehDivida?"Valor devido":"Saldo atual"} value={form.saldoInicial} onChange={e=>setForm({...form,saldoInicial:e.target.value})}/></div>
+          </div>
+          {ehDivida&&(
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{width:90}}><FInput type="number" placeholder="Nº parcelas" value={form.parcelas} onChange={e=>setForm({...form,parcelas:e.target.value})}/></div>
+              <div style={{width:110}}><FInput type="number" placeholder="Valor/parcela" value={form.valorParcela} onChange={e=>setForm({...form,valorParcela:e.target.value})}/></div>
+              <div style={{width:110}}><FInput type="number" placeholder="% desc. antecip." value={form.descontoAntecipacao} onChange={e=>setForm({...form,descontoAntecipacao:e.target.value})}/></div>
+            </div>
+          )}
+          <Btn onClick={()=>{if(!form.nome.trim())return;onAdd(montarPayload(form));setForm(null);}}>Salvar</Btn>
         </div>
       )}
       {itens.length===0&&!form&&<div style={{fontSize:12,color:"var(--text3)"}}>Nenhuma {tipoLabel} cadastrada ainda.</div>}
@@ -132,12 +152,24 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onUpdate
           const saldo=saldoFn(it.id);
           const aberto=expandido&&expandido.id===it.id;
           const editando=editId===it.id;
+          const parc=parcelasFn?parcelasFn(it.id):null;
           if(editando)return(
-            <div key={it.id} style={{display:"flex",gap:8,padding:"10px 12px",background:"var(--surface2)",borderRadius:10,flexWrap:"wrap"}}>
-              <div style={{flex:2,minWidth:120}}><FInput value={editForm.nome} onChange={e=>setEditForm({...editForm,nome:e.target.value})}/></div>
-              <div style={{flex:1,minWidth:90}}><FInput type="number" value={editForm.saldoInicial} onChange={e=>setEditForm({...editForm,saldoInicial:e.target.value})}/></div>
-              <Btn size="sm" onClick={saveEdit}>Salvar</Btn>
-              <Btn size="sm" variant="ghost" onClick={()=>setEditId(null)}>Cancelar</Btn>
+            <div key={it.id} style={{padding:"10px 12px",background:"var(--surface2)",borderRadius:10}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:ehDivida?8:0}}>
+                <div style={{flex:2,minWidth:120}}><FInput value={editForm.nome} onChange={e=>setEditForm({...editForm,nome:e.target.value})}/></div>
+                <div style={{flex:1,minWidth:90}}><FInput type="number" value={editForm.saldoInicial} onChange={e=>setEditForm({...editForm,saldoInicial:e.target.value})}/></div>
+              </div>
+              {ehDivida&&(
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                  <div style={{width:90}}><FInput type="number" placeholder="Nº parcelas" value={editForm.parcelas} onChange={e=>setEditForm({...editForm,parcelas:e.target.value})}/></div>
+                  <div style={{width:110}}><FInput type="number" placeholder="Valor/parcela" value={editForm.valorParcela} onChange={e=>setEditForm({...editForm,valorParcela:e.target.value})}/></div>
+                  <div style={{width:110}}><FInput type="number" placeholder="% desc. antecip." value={editForm.descontoAntecipacao} onChange={e=>setEditForm({...editForm,descontoAntecipacao:e.target.value})}/></div>
+                </div>
+              )}
+              <div style={{display:"flex",gap:8}}>
+                <Btn size="sm" onClick={saveEdit}>Salvar</Btn>
+                <Btn size="sm" variant="ghost" onClick={()=>setEditId(null)}>Cancelar</Btn>
+              </div>
             </div>
           );
           return(
@@ -150,6 +182,13 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onUpdate
                   <button onClick={e=>{e.stopPropagation();if(confirm(`Excluir "${it.nome}"? Os lançamentos ligados a ela continuam no histórico.`))onDelete(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
                 </div>
               </div>
+              {parc&&(
+                <div style={{padding:"6px 12px",fontSize:11,color:"var(--text2)",display:"flex",flexWrap:"wrap",gap:"4px 10px"}}>
+                  <span>{parc.pagas}/{parc.parcelas} parcelas pagas</span>
+                  {parc.restantes>0&&<span>· faltam {brl(parc.valorNominalRestante)}</span>}
+                  {parc.restantes>0&&parc.desconto>0&&<span style={{color:"var(--green)",fontWeight:600}}>· quitando agora com {parc.desconto}% de desconto: {brl(parc.valorQuitacaoAntecipada)} (economiza {brl(parc.economia)})</span>}
+                </div>
+              )}
               {aberto&&(
                 <div style={{padding:"8px 12px",fontSize:12,color:"var(--text2)"}}>
                   {extratoFn(it.id).length===0?<div style={{color:"var(--text3)"}}>Sem lançamentos ainda.</div>:extratoFn(it.id).map(l=>(
@@ -237,6 +276,70 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,onAddConta,sho
       )}
       <div style={{marginBottom:12}}><FInput label="Descrição (opcional)" value={descricao} onChange={e=>setDescricao(e.target.value)}/></div>
       <Btn onClick={submit} style={{width:"100%"}}>{editando?"Salvar alterações":"Adicionar"}</Btn>
+    </Card>
+  );
+}
+
+function SecaoContasAVencer({itens,onAdd,onUpdate,onDelete}){
+  const[form,setForm]=useState(null); // {nome,diaVencimento,valorEstimado} ou null
+  const[editId,setEditId]=useState(null);
+  const[editForm,setEditForm]=useState({nome:"",diaVencimento:"",valorEstimado:""});
+  function startEdit(it){setEditId(it.id);setEditForm({nome:it.nome,diaVencimento:it.diaVencimento?String(it.diaVencimento):"",valorEstimado:it.valorEstimado?String(it.valorEstimado):""});}
+  function saveEdit(){
+    if(!editForm.nome.trim())return;
+    onUpdate(editId,{nome:editForm.nome.trim(),diaVencimento:editForm.diaVencimento?Number(editForm.diaVencimento):null,valorEstimado:editForm.valorEstimado?Number(editForm.valorEstimado):null});
+    setEditId(null);
+  }
+  const ordenados=[...itens].sort((a,b)=>(a.diaVencimento||99)-(b.diaVencimento||99));
+  return(
+    <Card style={{marginTop:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>Contas a vencer</div>
+        <Btn size="sm" variant="secondary" onClick={()=>setForm(form?null:{nome:"",diaVencimento:"",valorEstimado:""})}>{form?"Cancelar":"+ Nova"}</Btn>
+      </div>
+      {form&&(
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{flex:2,minWidth:130}}><FInput placeholder="Nome (ex: Internet)" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></div>
+          <div style={{width:90}}><FInput type="number" min="1" max="31" placeholder="Dia venc." value={form.diaVencimento} onChange={e=>setForm({...form,diaVencimento:e.target.value})}/></div>
+          <div style={{width:110}}><FInput type="number" placeholder="Valor aprox." value={form.valorEstimado} onChange={e=>setForm({...form,valorEstimado:e.target.value})}/></div>
+          <Btn onClick={()=>{if(!form.nome.trim())return;onAdd({nome:form.nome.trim(),diaVencimento:form.diaVencimento?Number(form.diaVencimento):null,valorEstimado:form.valorEstimado?Number(form.valorEstimado):null});setForm(null);}}>Salvar</Btn>
+        </div>
+      )}
+      {itens.length===0&&!form&&<div style={{fontSize:12,color:"var(--text3)"}}>Nada cadastrado ainda. Dia de vencimento e valor são opcionais.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {ordenados.map(it=>{
+          const editando=editId===it.id;
+          if(editando)return(
+            <div key={it.id} style={{display:"flex",gap:8,padding:"10px 12px",background:"var(--surface2)",borderRadius:10,flexWrap:"wrap"}}>
+              <div style={{flex:2,minWidth:110}}><FInput value={editForm.nome} onChange={e=>setEditForm({...editForm,nome:e.target.value})}/></div>
+              <div style={{width:80}}><FInput type="number" min="1" max="31" value={editForm.diaVencimento} onChange={e=>setEditForm({...editForm,diaVencimento:e.target.value})}/></div>
+              <div style={{width:100}}><FInput type="number" value={editForm.valorEstimado} onChange={e=>setEditForm({...editForm,valorEstimado:e.target.value})}/></div>
+              <Btn size="sm" onClick={saveEdit}>Salvar</Btn>
+              <Btn size="sm" variant="ghost" onClick={()=>setEditId(null)}>Cancelar</Btn>
+            </div>
+          );
+          const dias=it.diaVencimento?diasAteVencimento(it.diaVencimento):null;
+          let badge=null,badgeCor="var(--text3)",badgeBg="var(--surface2)";
+          if(dias!==null){
+            badge=dias===0?"vence hoje":`vence em ${dias}d`;
+            if(dias<=5){badgeCor="var(--red)";badgeBg="var(--red-bg)";}
+            else if(dias<=10){badgeCor="var(--amber)";badgeBg="var(--amber-bg)";}
+          }
+          return(
+            <div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:"var(--surface2)",borderRadius:10}}>
+              <div>
+                <div style={{fontWeight:600,fontSize:13}}>{it.nome}{it.diaVencimento?` · todo dia ${it.diaVencimento}`:""}</div>
+                {it.valorEstimado?<div style={{fontSize:11,color:"var(--text3)"}}>~{brl(it.valorEstimado)}</div>:null}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {badge&&<span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:10,background:badgeBg,color:badgeCor,whiteSpace:"nowrap"}}>{badge}</span>}
+                <button onClick={()=>startEdit(it)} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✎</button>
+                <button onClick={()=>{if(confirm(`Excluir "${it.nome}"?`))onDelete(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }
@@ -374,6 +477,10 @@ function App(){
   const addDivida=d=>persist({...data,dividas:[...data.dividas,{...d,id:uid()}]});
   const updateDivida=(id,d)=>persist({...data,dividas:data.dividas.map(x=>x.id===id?{...x,...d}:x)});
   const delDivida=id=>persist({...data,dividas:data.dividas.filter(d=>d.id!==id)});
+  const contasAVencer=data.contasAVencer||[];
+  const addContaVencer=c=>persist({...data,contasAVencer:[...contasAVencer,{...c,id:uid()}]});
+  const updateContaVencer=(id,c)=>persist({...data,contasAVencer:contasAVencer.map(x=>x.id===id?{...x,...c}:x)});
+  const delContaVencer=id=>persist({...data,contasAVencer:contasAVencer.filter(c=>c.id!==id)});
   const categoriasDefault={receita:CAT_RECEITA,despesa:CAT_DESPESA};
   const categorias=data.categorias||categoriasDefault;
   const addCategoria=(tipo,nome)=>{
@@ -422,7 +529,9 @@ function App(){
 
       <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} onAdd={addConta} onUpdate={updateConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
 
-      <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
+      <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} parcelasFn={id=>resumoParcelas(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
+
+      <SecaoContasAVencer itens={contasAVencer} onAdd={addContaVencer} onUpdate={updateContaVencer} onDelete={delContaVencer}/>
 
       <SecaoCategorias categorias={categorias} onAdd={addCategoria} onDelete={delCategoria}/>
 
