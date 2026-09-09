@@ -54,7 +54,7 @@ const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoCo
 const STORAGE_KEY="respondm_financas_v1";
 const AUTHORIZED_EMAILS=["roberthjhow@gmail.com"]; // app pessoal — só Robert
 const CAT_RECEITA=["Salário/Pró-labore","Freelance/Extra","Investimentos","Outros"];
-const CAT_DESPESA=["Moradia","Alimentação","Transporte","Saúde","Lazer","Assinaturas","Imposto/MEI","Pagamento de dívida","Outros"];
+const CAT_DESPESA=["Moradia","Alimentação","Transporte","Saúde","Lazer","Assinaturas","Imposto/MEI","Pagamento de dívida","Pagamento de conta a vencer","Outros"];
 const MESES_PT=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -207,7 +207,7 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,onA
   );
 }
 
-function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,onAddConta,showToast,editando,onCancelEdit}){
+function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,onAddConta,showToast,editando,onCancelEdit}){
   const[tipo,setTipo]=useState("despesa");
   const[valor,setValor]=useState("");
   const[data,setData]=useState(hojeISO());
@@ -215,13 +215,15 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,onAddConta,sho
   const[categoria,setCategoria]=useState(cats[0]);
   const[contaId,setContaId]=useState("");
   const[dividaId,setDividaId]=useState("");
+  const[contaVencerId,setContaVencerId]=useState("");
   const[descricao,setDescricao]=useState("");
   const[novaConta,setNovaConta]=useState({nome:"",saldoInicial:""});
   useEffect(()=>{
     if(!editando)return;
     setTipo(editando.tipo);setValor(String(editando.valor));setData(editando.data);
     setCategoria(editando.categoria);setContaId(editando.contaId||"");
-    setDividaId(editando.dividaId||"");setDescricao(editando.descricao||"");
+    setDividaId(editando.dividaId||"");setContaVencerId(editando.contaVencerId||"");
+    setDescricao(editando.descricao||"");
   },[editando]);
   useEffect(()=>{if(!contaId&&contas.length)setContaId(contas[0].id);},[contas]);
   function handleTipo(t){setTipo(t);setCategoria(categorias[t][0]);}
@@ -231,13 +233,20 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,onAddConta,sho
     setNovaConta({nome:"",saldoInicial:""});
   }
   const precisaDivida=categoria==="Pagamento de dívida";
+  const precisaContaVencer=categoria==="Pagamento de conta a vencer";
+  function escolherContaVencer(id){
+    setContaVencerId(id);
+    const cv=contasAVencer.find(c=>c.id===id);
+    if(cv){setDescricao(cv.nome);if(cv.valorEstimado)setValor(String(cv.valorEstimado));}
+  }
   function limpar(){setValor("");setDescricao("");}
   function cancelar(){onCancelEdit();limpar();setData(hojeISO());}
   function submit(){
     if(!contas.length){showToast("Cadastre uma conta primeiro (onde esse dinheiro está).","error");return;}
     if(!valor||Number(valor)<=0){showToast("Informe um valor válido.","error");return;}
     if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
-    const payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,descricao:descricao.trim()};
+    if(precisaContaVencer&&!contaVencerId){showToast("Selecione a conta a vencer que está sendo paga.","error");return;}
+    const payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,contaVencerId:precisaContaVencer?contaVencerId:undefined,descricao:descricao.trim()};
     if(editando){onUpdate(editando.id,payload);onCancelEdit();}
     else onAdd(payload);
     limpar();
@@ -273,6 +282,9 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,onAddConta,sho
       </div>
       {precisaDivida&&(
         <div style={{marginBottom:8}}><FSelect label="Qual dívida está sendo paga" value={dividaId} onChange={e=>setDividaId(e.target.value)}><option value="">Selecione</option>{dividas.map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</FSelect></div>
+      )}
+      {precisaContaVencer&&(
+        <div style={{marginBottom:8}}><FSelect label="Qual conta a vencer está sendo paga" value={contaVencerId} onChange={e=>escolherContaVencer(e.target.value)}><option value="">Selecione</option>{contasAVencer.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
       )}
       <div style={{marginBottom:12}}><FInput label="Descrição (opcional)" value={descricao} onChange={e=>setDescricao(e.target.value)}/></div>
       <Btn onClick={submit} style={{width:"100%"}}>{editando?"Salvar alterações":"Adicionar"}</Btn>
@@ -371,7 +383,7 @@ function SecaoCategorias({categorias,onAdd,onDelete}){
           <div style={{fontSize:11,color:"var(--text3)",marginBottom:6,textTransform:"uppercase",letterSpacing:".04em"}}>{t==="despesa"?"Despesas":"Receitas"}</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
             {categorias[t].map(c=>{
-              const protegida=c==="Pagamento de dívida";
+              const protegida=c==="Pagamento de dívida"||c==="Pagamento de conta a vencer";
               return(
                 <span key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"var(--surface2)",borderRadius:20,fontSize:12}}>
                   {c}
@@ -536,7 +548,7 @@ function App(){
       <SecaoCategorias categorias={categorias} onAdd={addCategoria} onDelete={delCategoria}/>
 
       <GraficoCategorias porCategoria={porCategoria}/>
-      <FormLancamento contas={data.contas} dividas={data.dividas} categorias={categorias} onAdd={addLancamento} onUpdate={updateLancamento} onAddConta={addConta} showToast={showToast} editando={editando} onCancelEdit={()=>setEditando(null)}/>
+      <FormLancamento contas={data.contas} dividas={data.dividas} contasAVencer={contasAVencer} categorias={categorias} onAdd={addLancamento} onUpdate={updateLancamento} onAddConta={addConta} showToast={showToast} editando={editando} onCancelEdit={()=>setEditando(null)}/>
       <ListaLancamentos lancamentos={lancamentosMes} contas={data.contas} dividas={data.dividas} onDelete={delLancamento} onEdit={setEditando}/>
       <Toast toast={toast}/>
     </div>
