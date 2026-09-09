@@ -50,7 +50,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;bord
 <body><div id="root"></div>
 <script type="text/babel">
 const{useState,useEffect,useMemo}=React;
-const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,diasAteVencimento,resumoParcelas}=window.FinCalc;
+const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,situacaoContaVencer}=window.FinCalc;
 const STORAGE_KEY="respondm_financas_v1";
 const AUTHORIZED_EMAILS=["roberthjhow@gmail.com"]; // app pessoal — só Robert
 const CAT_RECEITA=["Salário/Pró-labore","Freelance/Extra","Investimentos","Outros"];
@@ -292,7 +292,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
   );
 }
 
-function SecaoContasAVencer({itens,onAdd,onUpdate,onDelete}){
+function SecaoContasAVencer({itens,situacaoFn,onAdd,onUpdate,onDelete}){
   const[form,setForm]=useState(null); // {nome,diaVencimento,valorEstimado} ou null
   const[editId,setEditId]=useState(null);
   const[editForm,setEditForm]=useState({nome:"",diaVencimento:"",valorEstimado:""});
@@ -330,12 +330,14 @@ function SecaoContasAVencer({itens,onAdd,onUpdate,onDelete}){
               <Btn size="sm" variant="ghost" onClick={()=>setEditId(null)}>Cancelar</Btn>
             </div>
           );
-          const dias=it.diaVencimento?diasAteVencimento(it.diaVencimento):null;
+          const sit=situacaoFn(it.id);
           let badge=null,badgeCor="var(--text3)",badgeBg="var(--surface2)";
-          if(dias!==null){
-            badge=dias===0?"vence hoje":`vence em ${dias}d`;
-            if(dias<=5){badgeCor="var(--red)";badgeBg="var(--red-bg)";}
-            else if(dias<=10){badgeCor="var(--amber)";badgeBg="var(--amber-bg)";}
+          if(sit&&sit.status==="pago"){badge=`pago em ${fmtDataBR(sit.ultimoPagamento)}`;badgeCor="var(--green)";badgeBg="var(--green-bg)";}
+          else if(sit&&sit.status==="atrasada"){badge=`atrasada há ${sit.dias}d`;badgeCor="var(--red)";badgeBg="var(--red-bg)";}
+          else if(sit&&sit.dias!==null){
+            badge=sit.dias===0?"vence hoje":`vence em ${sit.dias}d`;
+            if(sit.dias<=5){badgeCor="var(--red)";badgeBg="var(--red-bg)";}
+            else if(sit.dias<=10){badgeCor="var(--amber)";badgeBg="var(--amber-bg)";}
           }
           return(
             <div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:"var(--surface2)",borderRadius:10}}>
@@ -543,7 +545,7 @@ function App(){
 
       <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} parcelasFn={id=>resumoParcelas(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
 
-      <SecaoContasAVencer itens={contasAVencer} onAdd={addContaVencer} onUpdate={updateContaVencer} onDelete={delContaVencer}/>
+      <SecaoContasAVencer itens={contasAVencer} situacaoFn={id=>situacaoContaVencer(data,id)} onAdd={addContaVencer} onUpdate={updateContaVencer} onDelete={delContaVencer}/>
 
       <SecaoCategorias categorias={categorias} onAdd={addCategoria} onDelete={delCategoria}/>
 

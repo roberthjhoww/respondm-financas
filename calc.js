@@ -69,18 +69,30 @@ function resumoParcelas(data,dividaId){
   return{parcelas:divida.parcelas,pagas,restantes,valorParcela,valorNominalRestante,desconto,economia,valorQuitacaoAntecipada:valorNominalRestante-economia};
 }
 
-// Dias até o próximo vencimento de um dia fixo do mês (conta a vencer: internet, energia...).
-// Se o dia já passou este mês, calcula pro próximo mês. hojeISO é injetável pra dar pra testar.
-function diasAteVencimento(dia,hojeISO){
-  if(!dia)return null;
-  const hoje=hojeISO?new Date(hojeISO+"T00:00:00"):new Date();
-  hoje.setHours(0,0,0,0);
-  let candidato=new Date(hoje.getFullYear(),hoje.getMonth(),dia);
-  if(candidato<hoje)candidato=new Date(hoje.getFullYear(),hoje.getMonth()+1,dia);
-  return Math.round((candidato-hoje)/86400000);
+function extratoContaVencer(data,contaVencerId){
+  return (data.lancamentos||[]).filter(l=>l.contaVencerId===contaVencerId).sort((a,b)=>b.data.localeCompare(a.data));
 }
 
-const api={saldoConta,saldoTotal,saldoDivida,lancamentosDoMes,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,diasAteVencimento,resumoParcelas};
+// Situação de uma conta a vencer (internet, energia...): "pago" (já quitada neste ciclo, via lançamento
+// vinculado com data no mês atual), "atrasada" (o dia já passou este mês e não tem pagamento) ou
+// "pendente" (ainda dentro do prazo este mês, ou sem dia de vencimento cadastrado — nesse caso dias=null).
+// hojeISO é injetável pra dar pra testar.
+function situacaoContaVencer(data,contaVencerId,hojeISO){
+  const cv=(data.contasAVencer||[]).find(c=>c.id===contaVencerId);
+  if(!cv)return null;
+  const hoje=hojeISO?new Date(hojeISO+"T00:00:00"):new Date();
+  hoje.setHours(0,0,0,0);
+  const mesAtual=hoje.getFullYear()+"-"+String(hoje.getMonth()+1).padStart(2,"0");
+  const ultimo=extratoContaVencer(data,contaVencerId)[0];
+  if(ultimo&&ultimo.data.slice(0,7)===mesAtual)return{status:"pago",ultimoPagamento:ultimo.data};
+  if(!cv.diaVencimento)return{status:"pendente",dias:null};
+  const vencimentoEsteMes=new Date(hoje.getFullYear(),hoje.getMonth(),cv.diaVencimento);
+  const diasParaVencer=Math.round((vencimentoEsteMes-hoje)/86400000);
+  if(diasParaVencer<0)return{status:"atrasada",dias:-diasParaVencer};
+  return{status:"pendente",dias:diasParaVencer};
+}
+
+const api={saldoConta,saldoTotal,saldoDivida,lancamentosDoMes,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,extratoContaVencer,situacaoContaVencer};
 if(typeof module!=="undefined"&&module.exports)module.exports=api;
 else root.FinCalc=api;
 })(typeof window!=="undefined"?window:this);
