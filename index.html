@@ -103,8 +103,16 @@ function LoginScreen(){
   );
 }
 
-function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onDelete,expandido,setExpandido,cor}){
-  const[form,setForm]=useState(null); // {nome,saldoInicial} ou null
+function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onUpdate,onDelete,expandido,setExpandido,cor}){
+  const[form,setForm]=useState(null); // {nome,saldoInicial} ou null — criação
+  const[editId,setEditId]=useState(null); // id em edição
+  const[editForm,setEditForm]=useState({nome:"",saldoInicial:""});
+  function startEdit(it){setEditId(it.id);setEditForm({nome:it.nome,saldoInicial:String(it.saldoInicial)});setExpandido(null);}
+  function saveEdit(){
+    if(!editForm.nome.trim())return;
+    onUpdate(editId,{nome:editForm.nome.trim(),saldoInicial:Number(editForm.saldoInicial)||0});
+    setEditId(null);
+  }
   return(
     <Card style={{marginTop:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -123,12 +131,22 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onDelete
         {itens.map(it=>{
           const saldo=saldoFn(it.id);
           const aberto=expandido&&expandido.id===it.id;
+          const editando=editId===it.id;
+          if(editando)return(
+            <div key={it.id} style={{display:"flex",gap:8,padding:"10px 12px",background:"var(--surface2)",borderRadius:10,flexWrap:"wrap"}}>
+              <div style={{flex:2,minWidth:120}}><FInput value={editForm.nome} onChange={e=>setEditForm({...editForm,nome:e.target.value})}/></div>
+              <div style={{flex:1,minWidth:90}}><FInput type="number" value={editForm.saldoInicial} onChange={e=>setEditForm({...editForm,saldoInicial:e.target.value})}/></div>
+              <Btn size="sm" onClick={saveEdit}>Salvar</Btn>
+              <Btn size="sm" variant="ghost" onClick={()=>setEditId(null)}>Cancelar</Btn>
+            </div>
+          );
           return(
             <div key={it.id}>
               <div onClick={()=>setExpandido(aberto?null:{id:it.id})} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:"var(--surface2)",borderRadius:10,cursor:"pointer"}}>
                 <div style={{fontWeight:600,fontSize:13}}>{it.nome}</div>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <div style={{fontWeight:700,fontSize:13,color:cor(saldo)}}>{brl(saldo)}</div>
+                  <button onClick={e=>{e.stopPropagation();startEdit(it);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✎</button>
                   <button onClick={e=>{e.stopPropagation();if(confirm(`Excluir "${it.nome}"? Os lançamentos ligados a ela continuam no histórico.`))onDelete(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
                 </div>
               </div>
@@ -150,31 +168,44 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onDelete
   );
 }
 
-function FormLancamento({contas,dividas,onAdd,showToast}){
+function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,showToast,editando,onCancelEdit}){
   const[tipo,setTipo]=useState("despesa");
   const[valor,setValor]=useState("");
   const[data,setData]=useState(hojeISO());
-  const cats=tipo==="receita"?CAT_RECEITA:CAT_DESPESA;
+  const cats=categorias[tipo];
   const[categoria,setCategoria]=useState(cats[0]);
   const[contaId,setContaId]=useState("");
   const[dividaId,setDividaId]=useState("");
   const[descricao,setDescricao]=useState("");
-  useEffect(()=>{setCategoria((tipo==="receita"?CAT_RECEITA:CAT_DESPESA)[0]);},[tipo]);
+  useEffect(()=>{
+    if(!editando)return;
+    setTipo(editando.tipo);setValor(String(editando.valor));setData(editando.data);
+    setCategoria(editando.categoria);setContaId(editando.contaId||"");
+    setDividaId(editando.dividaId||"");setDescricao(editando.descricao||"");
+  },[editando]);
   useEffect(()=>{if(!contaId&&contas.length)setContaId(contas[0].id);},[contas]);
+  function handleTipo(t){setTipo(t);setCategoria(categorias[t][0]);}
   const precisaDivida=categoria==="Pagamento de dívida";
+  function limpar(){setValor("");setDescricao("");}
+  function cancelar(){onCancelEdit();limpar();setData(hojeISO());}
   function submit(){
     if(!contas.length){showToast("Cadastre uma conta primeiro (onde esse dinheiro está).","error");return;}
     if(!valor||Number(valor)<=0){showToast("Informe um valor válido.","error");return;}
     if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
-    onAdd({tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,descricao:descricao.trim()});
-    setValor("");setDescricao("");
+    const payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,descricao:descricao.trim()};
+    if(editando){onUpdate(editando.id,payload);onCancelEdit();}
+    else onAdd(payload);
+    limpar();
   }
   return(
-    <Card style={{marginTop:16}}>
-      <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em",marginBottom:12}}>Novo lançamento</div>
+    <Card style={{marginTop:16,...(editando?{border:"1.5px solid var(--purple)"}:{})}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>{editando?"Editando lançamento":"Novo lançamento"}</div>
+        {editando&&<Btn size="sm" variant="ghost" onClick={cancelar}>Cancelar</Btn>}
+      </div>
       <div style={{display:"flex",gap:8,marginBottom:12}}>
-        <Btn variant={tipo==="despesa"?"danger":"secondary"} onClick={()=>setTipo("despesa")} style={{flex:1}}>Despesa</Btn>
-        <Btn variant={tipo==="receita"?"primary":"secondary"} onClick={()=>setTipo("receita")} style={{flex:1,...(tipo==="receita"?{background:"var(--green)",boxShadow:"none"}:{})}}>Receita</Btn>
+        <Btn variant={tipo==="despesa"?"danger":"secondary"} onClick={()=>handleTipo("despesa")} style={{flex:1}}>Despesa</Btn>
+        <Btn variant={tipo==="receita"?"primary":"secondary"} onClick={()=>handleTipo("receita")} style={{flex:1,...(tipo==="receita"?{background:"var(--green)",boxShadow:"none"}:{})}}>Receita</Btn>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
         <div style={{flex:1,minWidth:110}}><FInput label="Valor" type="number" step="0.01" placeholder="0,00" value={valor} onChange={e=>setValor(e.target.value)}/></div>
@@ -188,7 +219,49 @@ function FormLancamento({contas,dividas,onAdd,showToast}){
         <div style={{marginBottom:8}}><FSelect label="Qual dívida está sendo paga" value={dividaId} onChange={e=>setDividaId(e.target.value)}><option value="">Selecione</option>{dividas.map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</FSelect></div>
       )}
       <div style={{marginBottom:12}}><FInput label="Descrição (opcional)" value={descricao} onChange={e=>setDescricao(e.target.value)}/></div>
-      <Btn onClick={submit} style={{width:"100%"}}>Adicionar</Btn>
+      <Btn onClick={submit} style={{width:"100%"}}>{editando?"Salvar alterações":"Adicionar"}</Btn>
+    </Card>
+  );
+}
+
+function SecaoCategorias({categorias,onAdd,onDelete}){
+  const[form,setForm]=useState(false);
+  const[tipo,setTipo]=useState("despesa");
+  const[nome,setNome]=useState("");
+  function submit(){
+    const n=nome.trim();
+    if(!n||categorias[tipo].includes(n)){setNome("");setForm(false);return;}
+    onAdd(tipo,n);setNome("");setForm(false);
+  }
+  return(
+    <Card style={{marginTop:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>Categorias</div>
+        <Btn size="sm" variant="secondary" onClick={()=>setForm(!form)}>{form?"Cancelar":"+ Nova"}</Btn>
+      </div>
+      {form&&(
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{minWidth:120}}><FSelect value={tipo} onChange={e=>setTipo(e.target.value)}><option value="despesa">Despesa</option><option value="receita">Receita</option></FSelect></div>
+          <div style={{flex:1,minWidth:140}}><FInput placeholder="Nome da categoria" value={nome} onChange={e=>setNome(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")submit();}}/></div>
+          <Btn onClick={submit}>Salvar</Btn>
+        </div>
+      )}
+      {["despesa","receita"].map(t=>(
+        <div key={t} style={{marginBottom:10}}>
+          <div style={{fontSize:11,color:"var(--text3)",marginBottom:6,textTransform:"uppercase",letterSpacing:".04em"}}>{t==="despesa"?"Despesas":"Receitas"}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {categorias[t].map(c=>{
+              const protegida=c==="Pagamento de dívida";
+              return(
+                <span key={c} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"var(--surface2)",borderRadius:20,fontSize:12}}>
+                  {c}
+                  {!protegida&&<button onClick={()=>onDelete(t,c)} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:11,lineHeight:1}}>✕</button>}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </Card>
   );
 }
@@ -211,7 +284,7 @@ function GraficoCategorias({porCategoria}){
   );
 }
 
-function ListaLancamentos({lancamentos,contas,dividas,onDelete}){
+function ListaLancamentos({lancamentos,contas,dividas,onDelete,onEdit}){
   const contaNome=id=>(contas.find(c=>c.id===id)||{}).nome||"—";
   return(
     <Card style={{marginTop:16}}>
@@ -226,6 +299,7 @@ function ListaLancamentos({lancamentos,contas,dividas,onDelete}){
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{fontWeight:700,fontSize:13,color:l.tipo==="receita"?"var(--green)":"var(--red)"}}>{l.tipo==="receita"?"+":"−"}{brl(l.valor)}</div>
+              <button onClick={()=>onEdit(l)} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✎</button>
               <button onClick={()=>{if(confirm("Excluir este lançamento?"))onDelete(l.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
             </div>
           </div>
@@ -245,6 +319,7 @@ function App(){
   const[toast,setToast]=useState(null);
   const[expContas,setExpContas]=useState(null);
   const[expDividas,setExpDividas]=useState(null);
+  const[editando,setEditando]=useState(null); // lançamento em edição, ou null
 
   function showToast(msg,type){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
@@ -274,11 +349,25 @@ function App(){
     fbSave(next).catch(()=>showToast("Erro ao salvar na nuvem.","error"));
   }
   const addLancamento=l=>persist({...data,lancamentos:[...data.lancamentos,{...l,id:uid()}]});
+  const updateLancamento=(id,l)=>persist({...data,lancamentos:data.lancamentos.map(x=>x.id===id?{...l,id}:x)});
   const delLancamento=id=>persist({...data,lancamentos:data.lancamentos.filter(l=>l.id!==id)});
   const addConta=c=>persist({...data,contas:[...data.contas,{...c,id:uid()}]});
+  const updateConta=(id,c)=>persist({...data,contas:data.contas.map(x=>x.id===id?{...x,...c}:x)});
   const delConta=id=>persist({...data,contas:data.contas.filter(c=>c.id!==id)});
   const addDivida=d=>persist({...data,dividas:[...data.dividas,{...d,id:uid()}]});
+  const updateDivida=(id,d)=>persist({...data,dividas:data.dividas.map(x=>x.id===id?{...x,...d}:x)});
   const delDivida=id=>persist({...data,dividas:data.dividas.filter(d=>d.id!==id)});
+  const categoriasDefault={receita:CAT_RECEITA,despesa:CAT_DESPESA};
+  const categorias=data.categorias||categoriasDefault;
+  const addCategoria=(tipo,nome)=>{
+    const atual=data.categorias||categoriasDefault;
+    if(atual[tipo].includes(nome))return;
+    persist({...data,categorias:{...atual,[tipo]:[...atual[tipo],nome]}});
+  };
+  const delCategoria=(tipo,nome)=>{
+    const atual=data.categorias||categoriasDefault;
+    persist({...data,categorias:{...atual,[tipo]:atual[tipo].filter(c=>c!==nome)}});
+  };
 
   const total=useMemo(()=>saldoTotal(data),[data]);
   const resumo=useMemo(()=>resumoMes(data,mesRef),[data,mesRef]);
@@ -314,13 +403,15 @@ function App(){
         <Card style={{flex:1,textAlign:"center",padding:14}}><div style={{fontSize:11,color:"var(--text3)",marginBottom:4}}>Saldo do mês</div><div style={{fontWeight:700}}>{brl(resumo.saldo)}</div></Card>
       </div>
 
-      <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} onAdd={addConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
+      <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} onAdd={addConta} onUpdate={updateConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
 
-      <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} onAdd={addDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
+      <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
+
+      <SecaoCategorias categorias={categorias} onAdd={addCategoria} onDelete={delCategoria}/>
 
       <GraficoCategorias porCategoria={porCategoria}/>
-      <FormLancamento contas={data.contas} dividas={data.dividas} onAdd={addLancamento} showToast={showToast}/>
-      <ListaLancamentos lancamentos={lancamentosMes} contas={data.contas} dividas={data.dividas} onDelete={delLancamento}/>
+      <FormLancamento contas={data.contas} dividas={data.dividas} categorias={categorias} onAdd={addLancamento} onUpdate={updateLancamento} showToast={showToast} editando={editando} onCancelEdit={()=>setEditando(null)}/>
+      <ListaLancamentos lancamentos={lancamentosMes} contas={data.contas} dividas={data.dividas} onDelete={delLancamento} onEdit={setEditando}/>
       <Toast toast={toast}/>
     </div>
   );
