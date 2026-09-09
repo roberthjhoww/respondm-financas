@@ -168,7 +168,7 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onUpdate
   );
 }
 
-function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,showToast,editando,onCancelEdit}){
+function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,onAddConta,showToast,editando,onCancelEdit}){
   const[tipo,setTipo]=useState("despesa");
   const[valor,setValor]=useState("");
   const[data,setData]=useState(hojeISO());
@@ -177,6 +177,7 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,showToast,edit
   const[contaId,setContaId]=useState("");
   const[dividaId,setDividaId]=useState("");
   const[descricao,setDescricao]=useState("");
+  const[novaConta,setNovaConta]=useState({nome:"",saldoInicial:""});
   useEffect(()=>{
     if(!editando)return;
     setTipo(editando.tipo);setValor(String(editando.valor));setData(editando.data);
@@ -185,6 +186,11 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,showToast,edit
   },[editando]);
   useEffect(()=>{if(!contaId&&contas.length)setContaId(contas[0].id);},[contas]);
   function handleTipo(t){setTipo(t);setCategoria(categorias[t][0]);}
+  function criarConta(){
+    if(!novaConta.nome.trim())return;
+    onAddConta({nome:novaConta.nome.trim(),saldoInicial:Number(novaConta.saldoInicial)||0});
+    setNovaConta({nome:"",saldoInicial:""});
+  }
   const precisaDivida=categoria==="Pagamento de dívida";
   function limpar(){setValor("");setDescricao("");}
   function cancelar(){onCancelEdit();limpar();setData(hojeISO());}
@@ -213,7 +219,18 @@ function FormLancamento({contas,dividas,categorias,onAdd,onUpdate,showToast,edit
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
         <div style={{flex:1,minWidth:150}}><FSelect label="Categoria" value={categoria} onChange={e=>setCategoria(e.target.value)}>{cats.map(c=><option key={c} value={c}>{c}</option>)}</FSelect></div>
-        <div style={{flex:1,minWidth:130}}><FSelect label="Conta" value={contaId} onChange={e=>setContaId(e.target.value)}>{contas.length===0&&<option value="">Cadastre uma conta</option>}{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
+        {contas.length===0?(
+          <div style={{flex:1,minWidth:220}}>
+            <span style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:".05em",textTransform:"uppercase",display:"block",marginBottom:5}}>Conta (nenhuma cadastrada)</span>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:110}}><input placeholder="Nome (ex: Nubank)" value={novaConta.nome} onChange={e=>setNovaConta({...novaConta,nome:e.target.value})} onKeyDown={e=>{if(e.key==="Enter")criarConta();}} style={{padding:"9px 12px",borderRadius:10,border:"1.5px solid var(--border)",fontSize:13,width:"100%"}}/></div>
+              <div style={{width:90}}><input type="number" placeholder="Saldo" value={novaConta.saldoInicial} onChange={e=>setNovaConta({...novaConta,saldoInicial:e.target.value})} onKeyDown={e=>{if(e.key==="Enter")criarConta();}} style={{padding:"9px 12px",borderRadius:10,border:"1.5px solid var(--border)",fontSize:13,width:"100%"}}/></div>
+              <Btn size="sm" onClick={criarConta}>Cadastrar</Btn>
+            </div>
+          </div>
+        ):(
+          <div style={{flex:1,minWidth:130}}><FSelect label="Conta" value={contaId} onChange={e=>setContaId(e.target.value)}>{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
+        )}
       </div>
       {precisaDivida&&(
         <div style={{marginBottom:8}}><FSelect label="Qual dívida está sendo paga" value={dividaId} onChange={e=>setDividaId(e.target.value)}><option value="">Selecione</option>{dividas.map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</FSelect></div>
@@ -410,7 +427,7 @@ function App(){
       <SecaoCategorias categorias={categorias} onAdd={addCategoria} onDelete={delCategoria}/>
 
       <GraficoCategorias porCategoria={porCategoria}/>
-      <FormLancamento contas={data.contas} dividas={data.dividas} categorias={categorias} onAdd={addLancamento} onUpdate={updateLancamento} showToast={showToast} editando={editando} onCancelEdit={()=>setEditando(null)}/>
+      <FormLancamento contas={data.contas} dividas={data.dividas} categorias={categorias} onAdd={addLancamento} onUpdate={updateLancamento} onAddConta={addConta} showToast={showToast} editando={editando} onCancelEdit={()=>setEditando(null)}/>
       <ListaLancamentos lancamentos={lancamentosMes} contas={data.contas} dividas={data.dividas} onDelete={delLancamento} onEdit={setEditando}/>
       <Toast toast={toast}/>
     </div>
