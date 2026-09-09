@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>responDM · Finanças</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%237447E1'/%3E%3Ctext x='32' y='44' font-family='Arial,Helvetica,sans-serif' font-size='30' font-weight='bold' fill='%23ffffff' text-anchor='middle'%3E%24%3C/text%3E%3C/svg%3E"/>
+<!-- Versões FIXAS de propósito (mesmo motivo do app-assinaturas: @babel/standalone sem pin já quebrou o transform). -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* Mesmo projeto Firebase do app-assinaturas — dados ficam num doc próprio ("config/financas_pessoais"), sem conflito. */
+var firebaseConfig={
+  apiKey:"AIzaSyA_OCk1eRxhGDR-0B64m9zrgXsp-dGEYZI",
+  authDomain:"controle-financeiro---respondm.firebaseapp.com",
+  projectId:"controle-financeiro---respondm",
+  storageBucket:"controle-financeiro---respondm.firebasestorage.app",
+  messagingSenderId:"316826841028",
+  appId:"1:316826841028:web:caf4a43b9acdda30f87e91"
+};
+firebase.initializeApp(firebaseConfig);
+window.fbAuth=firebase.auth();
+window.fbDB=firebase.firestore();
+</script>
+<script src="calc.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.5;min-height:100vh;
+  --purple:#7447E1;--purple-light:#EDE8FB;--purple-mid:#C4B0F5;
+  --bg:#F6F4FC;--surface:#FFFFFF;--surface2:#F2EFF9;
+  --text:#1A1630;--text2:#6B6487;--text3:#A49EC4;
+  --border:#E3DFF4;--border2:#CBC3EF;
+  --green:#1B8B5E;--green-bg:#E6F5EF;
+  --red:#B82828;--red-bg:#FDEAEA;
+  --amber:#9B6208;--amber-bg:#FEF3DC;
+  --shadow-sm:0 1px 3px rgba(116,71,225,.07),0 2px 8px rgba(116,71,225,.05);
+  --shadow-md:0 4px 24px rgba(116,71,225,.14);
+  background:var(--bg);color:var(--text);}
+#root{max-width:720px;margin:0 auto;padding:0 16px 60px;}
+input,select,button,textarea{font-family:inherit;}
+input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;border-color:var(--purple)!important;}
+::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+</style>
+</head>
+<body><div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect,useMemo}=React;
+const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida}=window.FinCalc;
+const STORAGE_KEY="respondm_financas_v1";
+const AUTHORIZED_EMAILS=["roberthjhow@gmail.com"]; // app pessoal — só Robert
+const CAT_RECEITA=["Salário/Pró-labore","Freelance/Extra","Investimentos","Outros"];
+const CAT_DESPESA=["Moradia","Alimentação","Transporte","Saúde","Lazer","Assinaturas","Imposto/MEI","Pagamento de dívida","Outros"];
+const MESES_PT=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function brl(v){return(Number(v)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});}
+function fmtDataBR(iso){if(!iso)return"—";const[y,m,d]=iso.split("-");return`${d}/${m}/${y}`;}
+function hojeISO(){return new Date().toISOString().slice(0,10);}
+function mesAtualRef(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
+function shiftMes(ref,delta){const[y,m]=ref.split("-").map(Number);const d=new Date(y,m-1+delta,1);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
+// Firestore rejeita undefined/NaN/Infinity — limpa antes de salvar.
+function stripUndefined(v){
+  if(Array.isArray(v))return v.map(stripUndefined);
+  if(v&&typeof v==="object"){const o={};for(const k in v)if(v[k]!==undefined)o[k]=stripUndefined(v[k]);return o;}
+  if(typeof v==="number"&&!isFinite(v))return null;
+  return v;
+}
+async function fbLoad(){if(!fbDB)return null;const d=await fbDB.collection("config").doc("financas_pessoais").get();return d.exists?d.data().data:null;}
+async function fbSave(data){if(!fbDB)return;await fbDB.collection("config").doc("financas_pessoais").set({data:stripUndefined(data)});}
+const fbAuth=window.fbAuth,fbDB=window.fbDB;
+
+/* ── UI base (mesmo padrão visual do app-assinaturas) ── */
+function FInput({label,...p}){return(<label style={{display:"flex",flexDirection:"column",gap:5}}>{label&&<span style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:".05em",textTransform:"uppercase"}}>{label}</span>}<input {...p} style={{padding:"9px 12px",borderRadius:10,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--text)",fontSize:13,width:"100%",...p.style}}/></label>);}
+function FSelect({label,children,...p}){return(<label style={{display:"flex",flexDirection:"column",gap:5}}>{label&&<span style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:".05em",textTransform:"uppercase"}}>{label}</span>}<select {...p} style={{padding:"9px 12px",borderRadius:10,border:"1.5px solid var(--border)",background:"var(--surface)",color:"var(--text)",fontSize:13,width:"100%",...p.style}}>{children}</select></label>);}
+function Btn({variant="primary",size="md",children,...p}){const base={border:"none",cursor:"pointer",fontWeight:600,borderRadius:10,fontSize:size==="sm"?11:13,padding:size==="sm"?"5px 11px":"9px 20px",lineHeight:1.4,letterSpacing:"-.01em"};const v={primary:{background:"var(--purple)",color:"#fff",boxShadow:"0 2px 10px rgba(116,71,225,.28)"},secondary:{background:"var(--surface)",color:"var(--text)",border:"1.5px solid var(--border)"},ghost:{background:"transparent",color:"var(--text2)"},danger:{background:"var(--red-bg)",color:"var(--red)"}};return <button {...p} style={{...base,...(v[variant]||v.secondary),...p.style}}>{children}</button>;}
+function Card({children,style}){return <div style={{background:"var(--surface)",border:"1.5px solid var(--border)",borderRadius:16,padding:18,boxShadow:"var(--shadow-sm)",...style}}>{children}</div>;}
+function Toast({toast}){if(!toast)return null;return(<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:toast.type==="error"?"var(--red)":"var(--text)",color:"#fff",padding:"10px 18px",borderRadius:10,fontSize:13,fontWeight:600,boxShadow:"var(--shadow-md)",zIndex:999}}>{toast.msg}</div>);}
+
+function LoginScreen(){
+  const[err,setErr]=useState("");const[loading,setLoading]=useState(false);
+  async function handleGoogleLogin(){
+    setLoading(true);setErr("");
+    try{const provider=new firebase.auth.GoogleAuthProvider();provider.setCustomParameters({prompt:"select_account"});await fbAuth.signInWithPopup(provider);}
+    catch(e){setErr(e.code==="auth/popup-closed-by-user"?"Login cancelado.":"Erro ao entrar: "+(e.message||e.code));setLoading(false);}
+  }
+  return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"var(--surface)",border:"1.5px solid var(--border)",borderRadius:20,padding:32,width:"100%",maxWidth:360,boxShadow:"var(--shadow-md)"}}>
+        <div style={{fontSize:24,fontWeight:800,letterSpacing:"-.03em",marginBottom:4}}>respon<span style={{color:"var(--purple)"}}>DM</span></div>
+        <div style={{fontSize:13,color:"var(--text3)",marginBottom:24}}>Finanças pessoais</div>
+        {err&&<div style={{fontSize:12,color:"var(--red)",background:"var(--red-bg)",borderRadius:9,padding:"8px 12px",fontWeight:600,marginBottom:14}}>{err}</div>}
+        <button onClick={handleGoogleLogin} disabled={loading} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,width:"100%",padding:"11px 16px",borderRadius:11,border:"1.5px solid var(--border2)",background:"var(--surface)",color:"var(--text)",fontSize:14,fontWeight:600,cursor:loading?"default":"pointer",fontFamily:"inherit",opacity:loading?.6:1}}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          {loading?"Entrando...":"Entrar com Google"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,onAdd,onDelete,expandido,setExpandido,cor}){
+  const[form,setForm]=useState(null); // {nome,saldoInicial} ou null
+  return(
+    <Card style={{marginTop:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>{titulo}</div>
+        <Btn size="sm" variant="secondary" onClick={()=>setForm(form?null:{nome:"",saldoInicial:""})}>{form?"Cancelar":"+ Nova"}</Btn>
+      </div>
+      {form&&(
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{flex:2,minWidth:140}}><FInput placeholder="Nome" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></div>
+          <div style={{flex:1,minWidth:100}}><FInput type="number" placeholder={tipoLabel==="dívida"?"Valor devido":"Saldo atual"} value={form.saldoInicial} onChange={e=>setForm({...form,saldoInicial:e.target.value})}/></div>
+          <Btn onClick={()=>{if(!form.nome.trim())return;onAdd({nome:form.nome.trim(),saldoInicial:Number(form.saldoInicial)||0});setForm(null);}}>Salvar</Btn>
+        </div>
+      )}
+      {itens.length===0&&!form&&<div style={{fontSize:12,color:"var(--text3)"}}>Nenhuma {tipoLabel} cadastrada ainda.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {itens.map(it=>{
+          const saldo=saldoFn(it.id);
+          const aberto=expandido&&expandido.id===it.id;
+          return(
+            <div key={it.id}>
+              <div onClick={()=>setExpandido(aberto?null:{id:it.id})} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:"var(--surface2)",borderRadius:10,cursor:"pointer"}}>
+                <div style={{fontWeight:600,fontSize:13}}>{it.nome}</div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{fontWeight:700,fontSize:13,color:cor(saldo)}}>{brl(saldo)}</div>
+                  <button onClick={e=>{e.stopPropagation();if(confirm(`Excluir "${it.nome}"? Os lançamentos ligados a ela continuam no histórico.`))onDelete(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
+                </div>
+              </div>
+              {aberto&&(
+                <div style={{padding:"8px 12px",fontSize:12,color:"var(--text2)"}}>
+                  {extratoFn(it.id).length===0?<div style={{color:"var(--text3)"}}>Sem lançamentos ainda.</div>:extratoFn(it.id).map(l=>(
+                    <div key={l.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid var(--border)"}}>
+                      <span>{fmtDataBR(l.data)} · {l.categoria}{l.descricao?` · ${l.descricao}`:""}</span>
+                      <span style={{fontWeight:600,color:l.tipo==="receita"?"var(--green)":"var(--red)"}}>{l.tipo==="receita"?"+":"−"}{brl(l.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function FormLancamento({contas,dividas,onAdd,showToast}){
+  const[tipo,setTipo]=useState("despesa");
+  const[valor,setValor]=useState("");
+  const[data,setData]=useState(hojeISO());
+  const cats=tipo==="receita"?CAT_RECEITA:CAT_DESPESA;
+  const[categoria,setCategoria]=useState(cats[0]);
+  const[contaId,setContaId]=useState("");
+  const[dividaId,setDividaId]=useState("");
+  const[descricao,setDescricao]=useState("");
+  useEffect(()=>{setCategoria((tipo==="receita"?CAT_RECEITA:CAT_DESPESA)[0]);},[tipo]);
+  useEffect(()=>{if(!contaId&&contas.length)setContaId(contas[0].id);},[contas]);
+  const precisaDivida=categoria==="Pagamento de dívida";
+  function submit(){
+    if(!contas.length){showToast("Cadastre uma conta primeiro (onde esse dinheiro está).","error");return;}
+    if(!valor||Number(valor)<=0){showToast("Informe um valor válido.","error");return;}
+    if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
+    onAdd({tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,descricao:descricao.trim()});
+    setValor("");setDescricao("");
+  }
+  return(
+    <Card style={{marginTop:16}}>
+      <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em",marginBottom:12}}>Novo lançamento</div>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <Btn variant={tipo==="despesa"?"danger":"secondary"} onClick={()=>setTipo("despesa")} style={{flex:1}}>Despesa</Btn>
+        <Btn variant={tipo==="receita"?"primary":"secondary"} onClick={()=>setTipo("receita")} style={{flex:1,...(tipo==="receita"?{background:"var(--green)",boxShadow:"none"}:{})}}>Receita</Btn>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <div style={{flex:1,minWidth:110}}><FInput label="Valor" type="number" step="0.01" placeholder="0,00" value={valor} onChange={e=>setValor(e.target.value)}/></div>
+        <div style={{flex:1,minWidth:130}}><FInput label="Data" type="date" value={data} onChange={e=>setData(e.target.value)}/></div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <div style={{flex:1,minWidth:150}}><FSelect label="Categoria" value={categoria} onChange={e=>setCategoria(e.target.value)}>{cats.map(c=><option key={c} value={c}>{c}</option>)}</FSelect></div>
+        <div style={{flex:1,minWidth:130}}><FSelect label="Conta" value={contaId} onChange={e=>setContaId(e.target.value)}>{contas.length===0&&<option value="">Cadastre uma conta</option>}{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
+      </div>
+      {precisaDivida&&(
+        <div style={{marginBottom:8}}><FSelect label="Qual dívida está sendo paga" value={dividaId} onChange={e=>setDividaId(e.target.value)}><option value="">Selecione</option>{dividas.map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</FSelect></div>
+      )}
+      <div style={{marginBottom:12}}><FInput label="Descrição (opcional)" value={descricao} onChange={e=>setDescricao(e.target.value)}/></div>
+      <Btn onClick={submit} style={{width:"100%"}}>Adicionar</Btn>
+    </Card>
+  );
+}
+
+function GraficoCategorias({porCategoria}){
+  if(!porCategoria.length)return null;
+  const max=porCategoria[0][1];
+  return(
+    <Card style={{marginTop:16}}>
+      <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em",marginBottom:12}}>Despesas por categoria (mês)</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {porCategoria.map(([cat,val])=>(
+          <div key={cat}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span>{cat}</span><span style={{fontWeight:600}}>{brl(val)}</span></div>
+            <div style={{height:7,background:"var(--surface2)",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${(val/max)*100}%`,background:"var(--purple)",borderRadius:4}}/></div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ListaLancamentos({lancamentos,contas,dividas,onDelete}){
+  const contaNome=id=>(contas.find(c=>c.id===id)||{}).nome||"—";
+  return(
+    <Card style={{marginTop:16}}>
+      <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em",marginBottom:12}}>Lançamentos do mês</div>
+      {lancamentos.length===0&&<div style={{fontSize:12,color:"var(--text3)"}}>Nenhum lançamento neste mês.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {lancamentos.map(l=>(
+          <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:"var(--surface2)",borderRadius:10}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:13}}>{l.categoria}{l.descricao?` · ${l.descricao}`:""}</div>
+              <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDataBR(l.data)} · {contaNome(l.contaId)}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontWeight:700,fontSize:13,color:l.tipo==="receita"?"var(--green)":"var(--red)"}}>{l.tipo==="receita"?"+":"−"}{brl(l.valor)}</div>
+              <button onClick={()=>{if(confirm("Excluir este lançamento?"))onDelete(l.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function App(){
+  const[authReady,setAuthReady]=useState(false);
+  const[user,setUser]=useState(null);
+  const[denied,setDenied]=useState(false);
+  const[data,setData]=useState({contas:[],dividas:[],lancamentos:[]});
+  const[loaded,setLoaded]=useState(false);
+  const[mesRef,setMesRef]=useState(mesAtualRef());
+  const[toast,setToast]=useState(null);
+  const[expContas,setExpContas]=useState(null);
+  const[expDividas,setExpDividas]=useState(null);
+
+  function showToast(msg,type){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
+
+  useEffect(()=>{
+    const unsub=fbAuth.onAuthStateChanged(u=>{
+      setAuthReady(true);
+      if(u&&u.email&&!AUTHORIZED_EMAILS.includes(u.email.toLowerCase())){setDenied(true);setUser(null);fbAuth.signOut();return;}
+      if(!u){setUser(null);return;}
+      setDenied(false);setUser(u);
+    });
+    return unsub;
+  },[]);
+
+  useEffect(()=>{
+    if(!user)return;
+    try{const r=localStorage.getItem(STORAGE_KEY);if(r)setData(JSON.parse(r));}catch(_){}
+    (async()=>{
+      try{const cloud=await fbLoad();if(cloud){setData(cloud);localStorage.setItem(STORAGE_KEY,JSON.stringify(cloud));}}
+      catch(e){showToast("Erro ao carregar da nuvem — usando dados locais.","error");}
+      setLoaded(true);
+    })();
+  },[user]);
+
+  function persist(next){
+    setData(next);
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}catch(_){}
+    fbSave(next).catch(()=>showToast("Erro ao salvar na nuvem.","error"));
+  }
+  const addLancamento=l=>persist({...data,lancamentos:[...data.lancamentos,{...l,id:uid()}]});
+  const delLancamento=id=>persist({...data,lancamentos:data.lancamentos.filter(l=>l.id!==id)});
+  const addConta=c=>persist({...data,contas:[...data.contas,{...c,id:uid()}]});
+  const delConta=id=>persist({...data,contas:data.contas.filter(c=>c.id!==id)});
+  const addDivida=d=>persist({...data,dividas:[...data.dividas,{...d,id:uid()}]});
+  const delDivida=id=>persist({...data,dividas:data.dividas.filter(d=>d.id!==id)});
+
+  const total=useMemo(()=>saldoTotal(data),[data]);
+  const resumo=useMemo(()=>resumoMes(data,mesRef),[data,mesRef]);
+  const lancamentosMes=useMemo(()=>data.lancamentos.filter(l=>(l.data||"").slice(0,7)===mesRef).sort((a,b)=>b.data.localeCompare(a.data)),[data,mesRef]);
+  const porCategoria=useMemo(()=>despesasPorCategoria(data,mesRef),[data,mesRef]);
+  const[ano,mes]=mesRef.split("-").map(Number);
+
+  if(!authReady)return null;
+  if(!user)return <LoginScreen/>;
+  if(denied)return <div style={{padding:40,textAlign:"center",color:"var(--red)"}}>Esta conta não tem acesso a este app.</div>;
+  if(!loaded)return <div style={{padding:40,textAlign:"center",color:"var(--text3)"}}>Carregando...</div>;
+
+  return(
+    <div style={{paddingTop:24}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+        <div>
+          <div style={{fontSize:20,fontWeight:800,letterSpacing:"-.03em"}}>Finanças</div>
+          <div style={{fontSize:12,color:"var(--text3)"}}>Saldo total em contas</div>
+          <div style={{fontSize:26,fontWeight:800,color:total>=0?"var(--text)":"var(--red)"}}>{brl(total)}</div>
+        </div>
+        <Btn variant="ghost" size="sm" onClick={()=>fbAuth.signOut()}>Sair</Btn>
+      </div>
+
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginBottom:16}}>
+        <button onClick={()=>setMesRef(shiftMes(mesRef,-1))} style={{border:"none",background:"none",cursor:"pointer",fontSize:18,color:"var(--purple)"}}>‹</button>
+        <div style={{fontWeight:700,fontSize:14}}>{MESES_PT[mes-1]} de {ano}</div>
+        <button onClick={()=>setMesRef(shiftMes(mesRef,1))} style={{border:"none",background:"none",cursor:"pointer",fontSize:18,color:"var(--purple)"}}>›</button>
+      </div>
+
+      <div style={{display:"flex",gap:10}}>
+        <Card style={{flex:1,textAlign:"center",padding:14}}><div style={{fontSize:11,color:"var(--text3)",marginBottom:4}}>Receitas</div><div style={{fontWeight:700,color:"var(--green)"}}>{brl(resumo.receitas)}</div></Card>
+        <Card style={{flex:1,textAlign:"center",padding:14}}><div style={{fontSize:11,color:"var(--text3)",marginBottom:4}}>Despesas</div><div style={{fontWeight:700,color:"var(--red)"}}>{brl(resumo.despesas)}</div></Card>
+        <Card style={{flex:1,textAlign:"center",padding:14}}><div style={{fontSize:11,color:"var(--text3)",marginBottom:4}}>Saldo do mês</div><div style={{fontWeight:700}}>{brl(resumo.saldo)}</div></Card>
+      </div>
+
+      <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} onAdd={addConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
+
+      <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} onAdd={addDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
+
+      <GraficoCategorias porCategoria={porCategoria}/>
+      <FormLancamento contas={data.contas} dividas={data.dividas} onAdd={addLancamento} showToast={showToast}/>
+      <ListaLancamentos lancamentos={lancamentosMes} contas={data.contas} dividas={data.dividas} onDelete={delLancamento}/>
+      <Toast toast={toast}/>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
