@@ -131,10 +131,14 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,sit
     onUpdate(editId,montarPayload(editForm));
     setEditId(null);
   }
+  const totalDevedor=ehDivida?itens.reduce((s,it)=>s+saldoFn(it.id),0):null;
   return(
     <Card style={{marginTop:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-        <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>{titulo}</div>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>{titulo}</div>
+          {ehDivida&&itens.length>0&&<div style={{fontSize:15,fontWeight:800,color:"var(--red)",marginTop:2}}>{brl(totalDevedor)}</div>}
+        </div>
         <Btn size="sm" variant="secondary" onClick={()=>setForm(form?null:{...FORM_ENTIDADE_VAZIO})}>{form?"Cancelar":"+ Nova"}</Btn>
       </div>
       {form&&(
