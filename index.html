@@ -243,11 +243,15 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
   }
   function limpar(){setValor("");setDescricao("");}
   function cancelar(){onCancelEdit();limpar();setData(hojeISO());}
+  const travaCliqueDuplo=useRef(false); // clique duplo no Adicionar duplicava o lançamento
   function submit(){
+    if(travaCliqueDuplo.current)return;
     if(!contas.length){showToast("Cadastre uma conta primeiro (onde esse dinheiro está).","error");return;}
     if(!valor||Number(valor)<=0){showToast("Informe um valor válido.","error");return;}
     if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
     if(precisaContaVencer&&!contaVencerId){showToast("Selecione a conta a vencer que está sendo paga.","error");return;}
+    travaCliqueDuplo.current=true;
+    setTimeout(()=>{travaCliqueDuplo.current=false;},600);
     const payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,contaVencerId:precisaContaVencer?contaVencerId:undefined,descricao:descricao.trim()};
     if(editando){
       onUpdate(editando.id,payload);
