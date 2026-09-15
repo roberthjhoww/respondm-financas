@@ -65,17 +65,31 @@ function extratoDivida(data,dividaId){
   return (data.lancamentos||[]).filter(l=>l.dividaId===dividaId).sort((a,b)=>b.data.localeCompare(a.data));
 }
 
+// Números de parcela cobertos por um pagamento — um pagamento pode quitar mais de uma parcela de uma vez
+// (ex: adiantar a última parcela junto com a do mês). `numerosParcela` (array) é o formato atual;
+// `numeroParcela` (singular) é mantido só por compatibilidade com pagamentos salvos antes dessa mudança.
+function numerosDoPagamento(l){
+  if(l.numerosParcela)return l.numerosParcela;
+  if(l.numeroParcela!=null)return[l.numeroParcela];
+  return[];
+}
+
 // Resumo de parcelas de uma dívida (opcional — só se ela tiver `parcelas` cadastrado).
 // `pagas` conta números de parcela distintos com pagamento vinculado. Pagamentos ANTIGOS (de antes dessa
-// função existir) não têm `numeroParcela` — ponytail: assumimos que eles cobrem as primeiras parcelas em
+// função existir) não têm nenhum número — ponytail: assumimos que eles cobrem as primeiras parcelas em
 // ordem (1, 2, 3...), senão dívidas já em andamento apareceriam com parcelas "atrasadas" que na verdade já
 // foram pagas. É uma heurística (não garante a ordem real), mas evita alarme falso pros dados que já existiam.
 function resumoParcelas(data,dividaId){
   const divida=(data.dividas||[]).find(d=>d.id===dividaId);
   if(!divida||!divida.parcelas)return null;
   const pagamentos=extratoDivida(data,dividaId);
-  const semNumero=pagamentos.filter(l=>l.numeroParcela==null).length;
-  const numerosPagos=new Set(pagamentos.map(l=>l.numeroParcela).filter(n=>n!=null));
+  let semNumero=0;
+  const numerosPagos=new Set();
+  pagamentos.forEach(l=>{
+    const ns=numerosDoPagamento(l);
+    if(ns.length===0)semNumero++;
+    else ns.forEach(n=>numerosPagos.add(n));
+  });
   for(let n=1;n<=semNumero;n++)numerosPagos.add(n);
   const pagas=numerosPagos.size;
   const restantes=Math.max(0,divida.parcelas-pagas);
@@ -132,7 +146,7 @@ function situacaoContaVencer(data,contaVencerId,hojeISO){
   return{status:"pendente",dias:diasParaVencer};
 }
 
-const api={saldoConta,saldoTotal,saldoDivida,lancamentosDoMes,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,dataVencimentoParcela,situacaoParcelas,extratoContaVencer,situacaoContaVencer};
+const api={saldoConta,saldoTotal,saldoDivida,lancamentosDoMes,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,numerosDoPagamento,dataVencimentoParcela,situacaoParcelas,extratoContaVencer,situacaoContaVencer};
 if(typeof module!=="undefined"&&module.exports)module.exports=api;
 else root.FinCalc=api;
 })(typeof window!=="undefined"?window:this);

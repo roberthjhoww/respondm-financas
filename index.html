@@ -50,7 +50,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;bord
 <body><div id="root"></div>
 <script type="text/babel">
 const{useState,useEffect,useMemo,useRef}=React;
-const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,situacaoParcelas,situacaoContaVencer}=window.FinCalc;
+const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,numerosDoPagamento,situacaoParcelas,situacaoContaVencer}=window.FinCalc;
 const STORAGE_KEY="respondm_financas_v1";
 const AUTHORIZED_EMAILS=["roberthjhow@gmail.com"]; // app pessoal — só Robert
 const CAT_RECEITA=["Salário/Pró-labore","Freelance/Extra","Investimentos","Outros"];
@@ -62,7 +62,9 @@ function brl(v){return(Number(v)||0).toLocaleString("pt-BR",{style:"currency",cu
 function fmtDataBR(iso){if(!iso)return"—";const[y,m,d]=iso.split("-");return`${d}/${m}/${y}`;}
 function rotuloParcela(l){
   let s="";
-  if(l.numeroParcela)s+=` (parcela ${l.numeroParcela})`;
+  const ns=numerosDoPagamento(l);
+  if(ns.length===1)s+=` (parcela ${ns[0]})`;
+  else if(ns.length>1)s+=` (parcelas ${ns.join(", ")})`;
   if(l.juros)s+=` · +${brl(l.juros)} juros`;
   if(l.desconto)s+=` · -${brl(l.desconto)} desconto`;
   return s;
@@ -245,7 +247,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
   const[categoria,setCategoria]=useState(cats[0]);
   const[contaId,setContaId]=useState("");
   const[dividaId,setDividaId]=useState("");
-  const[numeroParcela,setNumeroParcela]=useState("");
+  const[numerosParcela,setNumerosParcela]=useState([]); // uma parcela pode ser paga junto com outra(s) num só pagamento
   const[ajusteTipo,setAjusteTipo]=useState("nenhum"); // nenhum | juros | desconto
   const[ajusteValor,setAjusteValor]=useState("");
   const[contaVencerId,setContaVencerId]=useState("");
@@ -260,7 +262,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
     setCategoria(editando.categoria||"");setContaId(editando.contaId||"");
     setDividaId(editando.dividaId||"");setContaVencerId(editando.contaVencerId||"");
     setContaOrigemId(editando.contaOrigemId||"");setContaDestinoId(editando.contaDestinoId||"");
-    setNumeroParcela(editando.numeroParcela?String(editando.numeroParcela):"");
+    setNumerosParcela(numerosDoPagamento(editando));
     if(editando.juros){setAjusteTipo("juros");setAjusteValor(String(editando.juros));}
     else if(editando.desconto){setAjusteTipo("desconto");setAjusteValor(String(editando.desconto));}
     else{setAjusteTipo("nenhum");setAjusteValor("");}
@@ -278,28 +280,34 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
   const precisaContaVencer=tipo!=="transferencia"&&categoria==="Pagamento de conta a vencer";
   const parcelasDaDivida=precisaDivida&&dividaId&&parcelasFn?parcelasFn(dividaId):null;
   function escolherDivida(id){
-    setDividaId(id);setNumeroParcela("");
+    setDividaId(id);setNumerosParcela([]);
     const d=dividas.find(x=>x.id===id);
     if(d&&d.valorParcela)setValor(String(d.valorParcela));
   }
-  // Valor tem que ser o total que realmente saiu da conta (parcela + juros, ou parcela - desconto) — recalcula
-  // sozinho a partir do valorParcela da dívida toda vez que o ajuste muda, pra não depender de soma manual.
-  function ajustarValorComBase(tipoAjuste,valorAjusteStr){
+  // Valor tem que ser o total que realmente saiu da conta (parcela(s) + juros, ou parcela(s) - desconto) —
+  // recalcula sozinho a partir do valorParcela x quantas parcelas estão marcadas, toda vez que o ajuste ou
+  // a seleção de parcelas muda, pra não depender de soma manual (um pagamento pode quitar mais de 1 parcela).
+  function ajustarValorComBase(tipoAjuste,valorAjusteStr,qtdParcelas){
     const d=dividas.find(x=>x.id===dividaId);
     if(!d||!d.valorParcela)return;
-    const base=Number(d.valorParcela);
+    const base=Number(d.valorParcela)*Math.max(1,qtdParcelas);
     const ajuste=Number(valorAjusteStr)||0;
     const novo=tipoAjuste==="juros"?base+ajuste:tipoAjuste==="desconto"?base-ajuste:base;
     setValor(String(novo));
   }
-  function handleAjusteTipo(t){setAjusteTipo(t);setAjusteValor("");ajustarValorComBase(t,"");}
-  function handleAjusteValor(v){setAjusteValor(v);ajustarValorComBase(ajusteTipo,v);}
+  function handleAjusteTipo(t){setAjusteTipo(t);setAjusteValor("");ajustarValorComBase(t,"",numerosParcela.length);}
+  function handleAjusteValor(v){setAjusteValor(v);ajustarValorComBase(ajusteTipo,v,numerosParcela.length);}
+  function toggleParcela(n){
+    const novos=numerosParcela.includes(n)?numerosParcela.filter(x=>x!==n):[...numerosParcela,n].sort((a,b)=>a-b);
+    setNumerosParcela(novos);
+    ajustarValorComBase(ajusteTipo,ajusteValor,novos.length);
+  }
   function escolherContaVencer(id){
     setContaVencerId(id);
     const cv=contasAVencer.find(c=>c.id===id);
     if(cv){setDescricao(cv.nome);if(cv.valorEstimado)setValor(String(cv.valorEstimado));}
   }
-  function limpar(){setValor("");setDescricao("");setNumeroParcela("");setAjusteTipo("nenhum");setAjusteValor("");}
+  function limpar(){setValor("");setDescricao("");setNumerosParcela([]);setAjusteTipo("nenhum");setAjusteValor("");}
   function cancelar(){onCancelEdit();limpar();setData(hojeISO());}
   const travaCliqueDuplo=useRef(false); // clique duplo no Adicionar duplicava o lançamento
   function submit(){
@@ -318,7 +326,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
       if(precisaDivida&&ajusteTipo!=="nenhum"&&(!ajusteValor||Number(ajusteValor)<=0)){showToast("Informe o valor do juros/desconto, ou volte pra \"Nenhum\".","error");return;}
       payload={tipo,valor:Number(valor),data,categoria,contaId,
         dividaId:precisaDivida?dividaId:undefined,
-        numeroParcela:precisaDivida&&numeroParcela?Number(numeroParcela):undefined,
+        numerosParcela:precisaDivida&&numerosParcela.length?numerosParcela:undefined,
         juros:precisaDivida&&ajusteTipo==="juros"?Number(ajusteValor):undefined,
         desconto:precisaDivida&&ajusteTipo==="desconto"?Number(ajusteValor):undefined,
         contaVencerId:precisaContaVencer?contaVencerId:undefined,
@@ -379,12 +387,20 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
         <div>
           <div style={{marginBottom:8}}><FSelect label="Qual dívida está sendo paga" value={dividaId} onChange={e=>escolherDivida(e.target.value)}><option value="">Selecione</option>{dividas.map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</FSelect></div>
           {parcelasDaDivida&&(
-            <div style={{marginBottom:8}}><FSelect label="Qual parcela" value={numeroParcela} onChange={e=>setNumeroParcela(e.target.value)}>
-              <option value="">Selecione</option>
-              {Array.from({length:parcelasDaDivida.parcelas},(_,i)=>i+1).map(n=>(
-                <option key={n} value={n}>{n}{parcelasDaDivida.numerosPagos.includes(n)?" (já paga)":""}</option>
-              ))}
-            </FSelect></div>
+            <div style={{marginBottom:8}}>
+              <span style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:".05em",textTransform:"uppercase",display:"block",marginBottom:5}}>Quais parcelas (dá pra marcar mais de uma no mesmo pagamento)</span>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {Array.from({length:parcelasDaDivida.parcelas},(_,i)=>i+1).map(n=>{
+                  const paga=parcelasDaDivida.numerosPagos.includes(n);
+                  const marcada=numerosParcela.includes(n);
+                  return(
+                    <button key={n} type="button" onClick={()=>toggleParcela(n)} style={{padding:"5px 10px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",border:marcada?"1.5px solid var(--purple)":"1.5px solid var(--border)",background:marcada?"var(--purple-light)":"var(--surface2)",color:marcada?"var(--purple)":paga?"var(--text3)":"var(--text)"}}>
+                      {n}{paga?" ✓":""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
             <div style={{flex:1,minWidth:150}}><FSelect label="Juros ou desconto?" value={ajusteTipo} onChange={e=>handleAjusteTipo(e.target.value)}>
