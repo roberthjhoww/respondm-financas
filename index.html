@@ -224,7 +224,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
   const[tipo,setTipo]=useState("despesa");
   const[valor,setValor]=useState("");
   const[data,setData]=useState(hojeISO());
-  const cats=categorias[tipo];
+  const cats=categorias[tipo]||[]; // tipo "transferencia" nao tem categorias — categorias[tipo] vira undefined
   const[categoria,setCategoria]=useState(cats[0]);
   const[contaId,setContaId]=useState("");
   const[dividaId,setDividaId]=useState("");
