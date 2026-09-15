@@ -273,7 +273,11 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
   const precisaDivida=tipo!=="transferencia"&&categoria==="Pagamento de dívida";
   const precisaContaVencer=tipo!=="transferencia"&&categoria==="Pagamento de conta a vencer";
   const parcelasDaDivida=precisaDivida&&dividaId&&parcelasFn?parcelasFn(dividaId):null;
-  function escolherDivida(id){setDividaId(id);setNumeroParcela("");}
+  function escolherDivida(id){
+    setDividaId(id);setNumeroParcela("");
+    const d=dividas.find(x=>x.id===id);
+    if(d&&d.valorParcela)setValor(String(d.valorParcela));
+  }
   function escolherContaVencer(id){
     setContaVencerId(id);
     const cv=contasAVencer.find(c=>c.id===id);
