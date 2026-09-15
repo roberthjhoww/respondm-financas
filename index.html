@@ -169,9 +169,13 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,sit
           const parc=parcelasFn?parcelasFn(it.id):null;
           const sitParc=situacaoFn?situacaoFn(it.id):null;
           let vencBadge=null,vencCor="var(--text3)",vencBg="var(--surface2)";
-          if(sitParc&&sitParc.atrasadas>0){vencBadge=`vencido há ${sitParc.diasAtraso}d`;vencCor="var(--red)";vencBg="var(--red-bg)";}
-          else if(sitParc&&sitParc.diasProximo!==null){
+          if(sitParc&&sitParc.atrasadas>0){
+            vencBadge=`vencido há ${sitParc.diasAtraso}d`;
+            if(parc&&parc.valorParcela)vencBadge+=` · ${brl(parc.valorParcela*sitParc.atrasadas)}`;
+            vencCor="var(--red)";vencBg="var(--red-bg)";
+          }else if(sitParc&&sitParc.diasProximo!==null){
             vencBadge=sitParc.diasProximo===0?"vence hoje":`vence em ${sitParc.diasProximo}d`;
+            if(parc&&parc.valorParcela)vencBadge+=` · ${brl(parc.valorParcela)}`;
             if(sitParc.diasProximo<=5){vencCor="var(--red)";vencBg="var(--red-bg)";}
             else if(sitParc.diasProximo<=10){vencCor="var(--amber)";vencBg="var(--amber-bg)";}
           }
