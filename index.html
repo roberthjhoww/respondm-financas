@@ -168,6 +168,13 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,sit
           const editando=editId===it.id;
           const parc=parcelasFn?parcelasFn(it.id):null;
           const sitParc=situacaoFn?situacaoFn(it.id):null;
+          let vencBadge=null,vencCor="var(--text3)",vencBg="var(--surface2)";
+          if(sitParc&&sitParc.atrasadas>0){vencBadge=`vencido há ${sitParc.diasAtraso}d`;vencCor="var(--red)";vencBg="var(--red-bg)";}
+          else if(sitParc&&sitParc.diasProximo!==null){
+            vencBadge=sitParc.diasProximo===0?"vence hoje":`vence em ${sitParc.diasProximo}d`;
+            if(sitParc.diasProximo<=5){vencCor="var(--red)";vencBg="var(--red-bg)";}
+            else if(sitParc.diasProximo<=10){vencCor="var(--amber)";vencBg="var(--amber-bg)";}
+          }
           if(editando)return(
             <div key={it.id} style={{padding:"10px 12px",background:"var(--surface2)",borderRadius:10}}>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:ehDivida?8:0}}>
@@ -194,6 +201,7 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,sit
                 <div style={{fontWeight:600,fontSize:13}}>{it.nome}</div>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <div style={{fontWeight:700,fontSize:13,color:cor(saldo)}}>{brl(saldo)}</div>
+                  {vencBadge&&<span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:10,background:vencBg,color:vencCor,whiteSpace:"nowrap"}}>{vencBadge}</span>}
                   <button onClick={e=>{e.stopPropagation();startEdit(it);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✎</button>
                   <button onClick={e=>{e.stopPropagation();if(confirm(`Excluir "${it.nome}"? Os lançamentos ligados a ela continuam no histórico.`))onDelete(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
                 </div>
@@ -204,8 +212,8 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,sit
                   {parc.restantes>0&&<span>· faltam {brl(parc.valorNominalRestante)}</span>}
                   {parc.totalJuros>0&&<span>· {brl(parc.totalJuros)} pagos em juros</span>}
                   {parc.restantes>0&&parc.desconto>0&&<span style={{color:"var(--green)",fontWeight:600}}>· quitando agora com {parc.desconto}% de desconto: {brl(parc.valorQuitacaoAntecipada)} (economiza {brl(parc.economia)})</span>}
-                  {sitParc&&sitParc.atrasadas>0&&<span style={{color:"var(--red)",fontWeight:700}}>· {sitParc.atrasadas} parcela{sitParc.atrasadas>1?"s":""} atrasada{sitParc.atrasadas>1?"s":""}</span>}
-                  {sitParc&&sitParc.atrasadas===0&&sitParc.proximoVencimento&&<span>· próxima (parcela {sitParc.proximoNumero}) vence {fmtDataBR(sitParc.proximoVencimento)}</span>}
+                  {sitParc&&sitParc.atrasadas>1&&<span style={{color:"var(--red)",fontWeight:600}}>· {sitParc.atrasadas} parcelas vencidas</span>}
+                  {sitParc&&sitParc.atrasadas===0&&sitParc.proximoNumero&&<span>· próxima: parcela {sitParc.proximoNumero}</span>}
                 </div>
               )}
               {aberto&&(

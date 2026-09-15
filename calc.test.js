@@ -70,8 +70,8 @@ assert.deepStrictEqual(numerosDoPagamento(data.lancamentos.find(l=>l.id==="l9"))
 assert.strictEqual(dataVencimentoParcela("2026-08-05",1),"2026-08-05","1ª parcela = o próprio primeiro vencimento");
 assert.strictEqual(dataVencimentoParcela("2026-08-05",5),"2026-12-05","5ª parcela = 4 meses depois, mesmo dia");
 
-assert.deepStrictEqual(situacaoParcelas(data,"d2","2026-09-09"),{atrasadas:0,proximoNumero:5,proximoVencimento:"2026-12-05"},"nenhuma pendente vencida ainda");
-assert.deepStrictEqual(situacaoParcelas(data,"d2","2026-12-10"),{atrasadas:1,proximoNumero:6,proximoVencimento:"2027-01-05"},"parcela 5 (venceu 05/12) ainda sem pagamento = atrasada");
+assert.deepStrictEqual(situacaoParcelas(data,"d2","2026-09-09"),{atrasadas:0,diasAtraso:null,proximoNumero:5,proximoVencimento:"2026-12-05",diasProximo:87},"nenhuma pendente vencida ainda");
+assert.deepStrictEqual(situacaoParcelas(data,"d2","2026-12-10"),{atrasadas:1,diasAtraso:5,proximoNumero:6,proximoVencimento:"2027-01-05",diasProximo:26},"parcela 5 (venceu 05/12, 5 dias atrás) ainda sem pagamento = atrasada");
 assert.strictEqual(situacaoParcelas(data,"d1","2026-09-09"),null,"dívida sem parcelas/primeiroVencimento cadastrados = null");
 
 const extD1=extratoDivida(data,"d1");

@@ -110,17 +110,26 @@ function dataVencimentoParcela(primeiroVencimento,numeroParcela){
   return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
 }
 
+function diasEntre(deISO,ateISO){return Math.round((new Date(ateISO+"T00:00:00")-new Date(deISO+"T00:00:00"))/86400000);}
+
 // Situação das parcelas em aberto de uma dívida (opcional — só se tiver `parcelas` E `primeiroVencimento`
-// cadastrados): quantas estão atrasadas (venceram e não têm pagamento vinculado) e qual a próxima a vencer.
+// cadastrados): quantas estão atrasadas (venceram e não têm pagamento vinculado), há quantos dias a mais
+// antiga venceu, e em quantos dias vence a próxima (mesmo formato "vence em Xd"/"vencida há Xd" das contas a vencer).
 function situacaoParcelas(data,dividaId,hojeISO){
   const divida=(data.dividas||[]).find(d=>d.id===dividaId);
   if(!divida||!divida.parcelas||!divida.primeiroVencimento)return null;
   const hoje=hojeISO||new Date().toISOString().slice(0,10);
   const resumo=resumoParcelas(data,dividaId);
   const comVencimento=resumo.numerosPendentes.map(n=>({numero:n,vencimento:dataVencimentoParcela(divida.primeiroVencimento,n)}));
-  const atrasadas=comVencimento.filter(p=>p.vencimento<hoje);
+  const atrasadas=comVencimento.filter(p=>p.vencimento<hoje).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
   const proximas=comVencimento.filter(p=>p.vencimento>=hoje).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
-  return{atrasadas:atrasadas.length,proximoNumero:proximas[0]?proximas[0].numero:null,proximoVencimento:proximas[0]?proximas[0].vencimento:null};
+  return{
+    atrasadas:atrasadas.length,
+    diasAtraso:atrasadas[0]?diasEntre(atrasadas[0].vencimento,hoje):null,
+    proximoNumero:proximas[0]?proximas[0].numero:null,
+    proximoVencimento:proximas[0]?proximas[0].vencimento:null,
+    diasProximo:proximas[0]?diasEntre(hoje,proximas[0].vencimento):null
+  };
 }
 
 function extratoContaVencer(data,contaVencerId){
