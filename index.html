@@ -49,7 +49,7 @@ input:focus,select:focus{outline:2px solid var(--purple);outline-offset:1px;bord
 </head>
 <body><div id="root"></div>
 <script type="text/babel">
-const{useState,useEffect,useMemo}=React;
+const{useState,useEffect,useMemo,useRef}=React;
 const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,situacaoContaVencer}=window.FinCalc;
 const STORAGE_KEY="respondm_financas_v1";
 const AUTHORIZED_EMAILS=["roberthjhow@gmail.com"]; // app pessoal — só Robert
@@ -218,12 +218,14 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
   const[contaVencerId,setContaVencerId]=useState("");
   const[descricao,setDescricao]=useState("");
   const[novaConta,setNovaConta]=useState({nome:"",saldoInicial:""});
+  const formRef=useRef();
   useEffect(()=>{
     if(!editando)return;
     setTipo(editando.tipo);setValor(String(editando.valor));setData(editando.data);
     setCategoria(editando.categoria);setContaId(editando.contaId||"");
     setDividaId(editando.dividaId||"");setContaVencerId(editando.contaVencerId||"");
     setDescricao(editando.descricao||"");
+    if(formRef.current)formRef.current.scrollIntoView({behavior:"smooth",block:"center"});
   },[editando]);
   useEffect(()=>{if(!contaId&&contas.length)setContaId(contas[0].id);},[contas]);
   function handleTipo(t){setTipo(t);setCategoria(categorias[t][0]);}
@@ -247,11 +249,19 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
     if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
     if(precisaContaVencer&&!contaVencerId){showToast("Selecione a conta a vencer que está sendo paga.","error");return;}
     const payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,contaVencerId:precisaContaVencer?contaVencerId:undefined,descricao:descricao.trim()};
-    if(editando){onUpdate(editando.id,payload);onCancelEdit();}
-    else onAdd(payload);
+    if(editando){
+      onUpdate(editando.id,payload);
+      onCancelEdit();
+      setData(hojeISO()); // sai do modo edição sem deixar a data "grudada" na data antiga
+      showToast("Lançamento atualizado.");
+    }else{
+      onAdd(payload);
+      showToast("Lançamento adicionado.");
+    }
     limpar();
   }
   return(
+    <div ref={formRef}>
     <Card style={{marginTop:16,...(editando?{border:"1.5px solid var(--purple)"}:{})}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em"}}>{editando?"Editando lançamento":"Novo lançamento"}</div>
@@ -289,6 +299,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
       <div style={{marginBottom:12}}><FInput label="Descrição (opcional)" value={descricao} onChange={e=>setDescricao(e.target.value)}/></div>
       <Btn onClick={submit} style={{width:"100%"}}>{editando?"Salvar alterações":"Adicionar"}</Btn>
     </Card>
+    </div>
   );
 }
 
@@ -509,7 +520,7 @@ function App(){
 
   const total=useMemo(()=>saldoTotal(data),[data]);
   const resumo=useMemo(()=>resumoMes(data,mesRef),[data,mesRef]);
-  const lancamentosMes=useMemo(()=>data.lancamentos.filter(l=>(l.data||"").slice(0,7)===mesRef).sort((a,b)=>b.data.localeCompare(a.data)),[data,mesRef]);
+  const lancamentosMes=useMemo(()=>data.lancamentos.filter(l=>(l.data||"").slice(0,7)===mesRef),[data,mesRef]);
   const porCategoria=useMemo(()=>despesasPorCategoria(data,mesRef),[data,mesRef]);
   const[ano,mes]=mesRef.split("-").map(Number);
 
