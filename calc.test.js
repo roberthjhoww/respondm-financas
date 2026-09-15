@@ -1,11 +1,11 @@
 const assert=require("assert");
-const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,situacaoContaVencer}=require("./calc.js");
+const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,dataVencimentoParcela,situacaoParcelas,situacaoContaVencer}=require("./calc.js");
 
 const data={
   contas:[{id:"c1",nome:"Nubank",saldoInicial:1000},{id:"c2",nome:"Dinheiro",saldoInicial:100}],
   dividas:[
     {id:"d1",nome:"Cartão de crédito",saldoInicial:500},
-    {id:"d2",nome:"Empréstimo",saldoInicial:1800,parcelas:12,valorParcela:150,descontoAntecipacao:10}
+    {id:"d2",nome:"Empréstimo",saldoInicial:1800,parcelas:12,valorParcela:150,descontoAntecipacao:10,primeiroVencimento:"2026-08-05"}
   ],
   contasAVencer:[
     {id:"cv1",nome:"Internet",diaVencimento:15},
@@ -20,15 +20,18 @@ const data={
     {id:"l5",data:"2026-08-05",tipo:"despesa",valor:150,categoria:"Pagamento de dívida",contaId:"c1",dividaId:"d2"},
     {id:"l6",data:"2026-09-05",tipo:"despesa",valor:150,categoria:"Pagamento de dívida",contaId:"c1",dividaId:"d2"},
     {id:"l7",data:"2026-09-08",tipo:"despesa",valor:80,categoria:"Pagamento de conta a vencer",contaId:"c1",contaVencerId:"cv2"},
-    {id:"l8",data:"2026-09-12",tipo:"transferencia",valor:300,contaOrigemId:"c1",contaDestinoId:"c2"}
+    {id:"l8",data:"2026-09-12",tipo:"transferencia",valor:300,contaOrigemId:"c1",contaDestinoId:"c2"},
+    {id:"l9",data:"2026-10-08",tipo:"despesa",valor:170,categoria:"Pagamento de dívida",contaId:"c1",dividaId:"d2",numeroParcela:3,juros:20},
+    {id:"l10",data:"2026-10-15",tipo:"despesa",valor:140,categoria:"Pagamento de dívida",contaId:"c1",dividaId:"d2",numeroParcela:4,desconto:10}
   ]
 };
 
-assert.strictEqual(saldoConta(data,"c1"),1870,"saldo conta c1 (debita a transferência que saiu)");
+assert.strictEqual(saldoConta(data,"c1"),1560,"saldo conta c1 (debita valor cheio pago, inclusive juros)");
 assert.strictEqual(saldoConta(data,"c2"),350,"saldo conta c2 (credita a transferência que entrou)");
 assert.strictEqual(saldoConta(data,"inexistente"),0,"conta inexistente = 0");
-assert.strictEqual(saldoTotal(data),2220,"saldo total não muda com transferência entre as próprias contas");
+assert.strictEqual(saldoTotal(data),1910,"saldo total não muda com transferência entre as próprias contas");
 assert.strictEqual(saldoDivida(data,"d1"),350,"saldo devedor abate com pagamento");
+assert.strictEqual(saldoDivida(data,"d2"),1200,"1800 - 4x150 abatido (juros nao abate, desconto abate a mais, os dois viram 150 liquido)");
 
 const r=resumoMes(data,"2026-09");
 assert.strictEqual(r.receitas,2000,"receitas do mês");
@@ -42,12 +45,22 @@ const cat=despesasPorCategoria(data,"2026-09");
 assert.deepStrictEqual(cat,[["Alimentação",300],["Pagamento de dívida",300],["Pagamento de conta a vencer",80]],"ordenado por valor desc");
 
 const rp=resumoParcelas(data,"d2");
-assert.strictEqual(rp.pagas,2,"2 lançamentos vinculados = 2 parcelas pagas");
-assert.strictEqual(rp.restantes,10,"12 - 2 pagas");
-assert.strictEqual(rp.valorNominalRestante,1500,"10 x 150");
-assert.strictEqual(rp.economia,150,"10% de desconto sobre 1500");
-assert.strictEqual(rp.valorQuitacaoAntecipada,1350,"1500 - economia");
+assert.strictEqual(rp.pagas,4,"2 pagamentos antigos sem número (assumidos como parcelas 1 e 2) + parcelas 3 e 4 numeradas");
+assert.strictEqual(rp.restantes,8,"12 - 4 pagas");
+assert.deepStrictEqual(rp.numerosPagos,[1,2,3,4],"1 e 2 vieram dos pagamentos antigos sem número (heurística sequencial)");
+assert.deepStrictEqual(rp.numerosPendentes,[5,6,7,8,9,10,11,12]);
+assert.strictEqual(rp.valorNominalRestante,1200,"8 x 150");
+assert.strictEqual(rp.economia,120,"10% de desconto sobre 1200");
+assert.strictEqual(rp.valorQuitacaoAntecipada,1080,"1200 - economia");
+assert.strictEqual(rp.totalJuros,20,"só o pagamento da parcela 3 teve juros");
 assert.strictEqual(resumoParcelas(data,"d1"),null,"dívida sem parcelas cadastradas = null");
+
+assert.strictEqual(dataVencimentoParcela("2026-08-05",1),"2026-08-05","1ª parcela = o próprio primeiro vencimento");
+assert.strictEqual(dataVencimentoParcela("2026-08-05",5),"2026-12-05","5ª parcela = 4 meses depois, mesmo dia");
+
+assert.deepStrictEqual(situacaoParcelas(data,"d2","2026-09-09"),{atrasadas:0,proximoNumero:5,proximoVencimento:"2026-12-05"},"nenhuma pendente vencida ainda");
+assert.deepStrictEqual(situacaoParcelas(data,"d2","2026-12-10"),{atrasadas:1,proximoNumero:6,proximoVencimento:"2027-01-05"},"parcela 5 (venceu 05/12) ainda sem pagamento = atrasada");
+assert.strictEqual(situacaoParcelas(data,"d1","2026-09-09"),null,"dívida sem parcelas/primeiroVencimento cadastrados = null");
 
 const extD1=extratoDivida(data,"d1");
 assert.strictEqual(extD1.length,1);
@@ -65,4 +78,4 @@ assert.deepStrictEqual(situacaoContaVencer(data,"cv2","2026-10-01"),{status:"pen
 assert.deepStrictEqual(situacaoContaVencer(data,"cv3","2026-09-09"),{status:"pendente",dias:null},"sem dia de vencimento cadastrado");
 assert.strictEqual(situacaoContaVencer(data,"inexistente","2026-09-09"),null,"conta a vencer inexistente = null");
 
-console.log("OK — calc.js verificado (28 asserts)");
+console.log("OK — calc.js verificado (37 asserts)");
