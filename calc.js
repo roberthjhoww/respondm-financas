@@ -2,12 +2,18 @@
 (function(root){
 function num(v){const n=Number(v);return isFinite(n)?n:0;}
 
-// Saldo de uma conta = saldo inicial + receitas nela - despesas nela (inclui pagamentos de dívida, que saem da conta).
+// Saldo de uma conta = saldo inicial + receitas nela - despesas nela (inclui pagamentos de dívida, que saem da
+// conta) +/- transferências (débito na origem, crédito no destino — não é receita nem despesa "de verdade").
 function saldoConta(data,contaId){
   const conta=(data.contas||[]).find(c=>c.id===contaId);
   if(!conta)return 0;
   let s=num(conta.saldoInicial);
   (data.lancamentos||[]).forEach(l=>{
+    if(l.tipo==="transferencia"){
+      if(l.contaOrigemId===contaId)s-=num(l.valor);
+      if(l.contaDestinoId===contaId)s+=num(l.valor);
+      return;
+    }
     if(l.contaId!==contaId)return;
     s+=l.tipo==="receita"?num(l.valor):-num(l.valor);
   });
@@ -48,7 +54,7 @@ function despesasPorCategoria(data,mesRef){
 }
 
 function extratoConta(data,contaId){
-  return (data.lancamentos||[]).filter(l=>l.contaId===contaId).sort((a,b)=>b.data.localeCompare(a.data));
+  return (data.lancamentos||[]).filter(l=>l.contaId===contaId||l.contaOrigemId===contaId||l.contaDestinoId===contaId).sort((a,b)=>b.data.localeCompare(a.data));
 }
 function extratoDivida(data,dividaId){
   return (data.lancamentos||[]).filter(l=>l.dividaId===dividaId).sort((a,b)=>b.data.localeCompare(a.data));

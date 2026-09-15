@@ -1,5 +1,5 @@
 const assert=require("assert");
-const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoDivida,resumoParcelas,situacaoContaVencer}=require("./calc.js");
+const{saldoConta,saldoTotal,saldoDivida,resumoMes,despesasPorCategoria,extratoConta,extratoDivida,resumoParcelas,situacaoContaVencer}=require("./calc.js");
 
 const data={
   contas:[{id:"c1",nome:"Nubank",saldoInicial:1000},{id:"c2",nome:"Dinheiro",saldoInicial:100}],
@@ -19,19 +19,20 @@ const data={
     {id:"l4",data:"2026-08-20",tipo:"despesa",valor:50,categoria:"Lazer",contaId:"c2"},
     {id:"l5",data:"2026-08-05",tipo:"despesa",valor:150,categoria:"Pagamento de dívida",contaId:"c1",dividaId:"d2"},
     {id:"l6",data:"2026-09-05",tipo:"despesa",valor:150,categoria:"Pagamento de dívida",contaId:"c1",dividaId:"d2"},
-    {id:"l7",data:"2026-09-08",tipo:"despesa",valor:80,categoria:"Pagamento de conta a vencer",contaId:"c1",contaVencerId:"cv2"}
+    {id:"l7",data:"2026-09-08",tipo:"despesa",valor:80,categoria:"Pagamento de conta a vencer",contaId:"c1",contaVencerId:"cv2"},
+    {id:"l8",data:"2026-09-12",tipo:"transferencia",valor:300,contaOrigemId:"c1",contaDestinoId:"c2"}
   ]
 };
 
-assert.strictEqual(saldoConta(data,"c1"),2170,"saldo conta c1");
-assert.strictEqual(saldoConta(data,"c2"),50,"saldo conta c2");
+assert.strictEqual(saldoConta(data,"c1"),1870,"saldo conta c1 (debita a transferência que saiu)");
+assert.strictEqual(saldoConta(data,"c2"),350,"saldo conta c2 (credita a transferência que entrou)");
 assert.strictEqual(saldoConta(data,"inexistente"),0,"conta inexistente = 0");
-assert.strictEqual(saldoTotal(data),2220,"saldo total");
+assert.strictEqual(saldoTotal(data),2220,"saldo total não muda com transferência entre as próprias contas");
 assert.strictEqual(saldoDivida(data,"d1"),350,"saldo devedor abate com pagamento");
 
 const r=resumoMes(data,"2026-09");
 assert.strictEqual(r.receitas,2000,"receitas do mês");
-assert.strictEqual(r.despesas,680,"despesas do mês (inclui pagamento de dívida e de conta a vencer)");
+assert.strictEqual(r.despesas,680,"despesas do mês (transferência não conta como despesa)");
 assert.strictEqual(r.saldo,1320,"saldo do mês");
 
 const rAgo=resumoMes(data,"2026-08");
@@ -52,6 +53,11 @@ const extD1=extratoDivida(data,"d1");
 assert.strictEqual(extD1.length,1);
 assert.strictEqual(extD1[0].id,"l3");
 
+const extC1=extratoConta(data,"c1");
+assert.ok(extC1.some(l=>l.id==="l8"),"extrato da conta origem inclui a transferência");
+const extC2=extratoConta(data,"c2");
+assert.ok(extC2.some(l=>l.id==="l8"),"extrato da conta destino também inclui a mesma transferência");
+
 assert.deepStrictEqual(situacaoContaVencer(data,"cv1","2026-09-09"),{status:"pendente",dias:6},"ainda dentro do prazo este mês");
 assert.deepStrictEqual(situacaoContaVencer(data,"cv1","2026-09-20"),{status:"atrasada",dias:5},"passou do dia 15 e não tem pagamento vinculado = atrasada, não pula pro mês seguinte");
 assert.deepStrictEqual(situacaoContaVencer(data,"cv2","2026-09-09"),{status:"pago",ultimoPagamento:"2026-09-08"},"tem lançamento vinculado neste mês = paga");
@@ -59,4 +65,4 @@ assert.deepStrictEqual(situacaoContaVencer(data,"cv2","2026-10-01"),{status:"pen
 assert.deepStrictEqual(situacaoContaVencer(data,"cv3","2026-09-09"),{status:"pendente",dias:null},"sem dia de vencimento cadastrado");
 assert.strictEqual(situacaoContaVencer(data,"inexistente","2026-09-09"),null,"conta a vencer inexistente = null");
 
-console.log("OK — calc.js verificado (24 asserts)");
+console.log("OK — calc.js verificado (28 asserts)");

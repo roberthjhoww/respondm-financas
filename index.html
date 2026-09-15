@@ -104,7 +104,7 @@ function LoginScreen(){
 }
 
 const FORM_ENTIDADE_VAZIO={nome:"",saldoInicial:"",parcelas:"",valorParcela:"",descontoAntecipacao:""};
-function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,onAdd,onUpdate,onDelete,expandido,setExpandido,cor}){
+function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,contasRef,onAdd,onUpdate,onDelete,expandido,setExpandido,cor}){
   const[form,setForm]=useState(null); // FORM_ENTIDADE_VAZIO ou null — criação
   const[editId,setEditId]=useState(null); // id em edição
   const[editForm,setEditForm]=useState(FORM_ENTIDADE_VAZIO);
@@ -191,12 +191,25 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,onA
               )}
               {aberto&&(
                 <div style={{padding:"8px 12px",fontSize:12,color:"var(--text2)"}}>
-                  {extratoFn(it.id).length===0?<div style={{color:"var(--text3)"}}>Sem lançamentos ainda.</div>:extratoFn(it.id).map(l=>(
-                    <div key={l.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid var(--border)"}}>
-                      <span>{fmtDataBR(l.data)} · {l.categoria}{l.descricao?` · ${l.descricao}`:""}</span>
-                      <span style={{fontWeight:600,color:l.tipo==="receita"?"var(--green)":"var(--red)"}}>{l.tipo==="receita"?"+":"−"}{brl(l.valor)}</span>
-                    </div>
-                  ))}
+                  {extratoFn(it.id).length===0?<div style={{color:"var(--text3)"}}>Sem lançamentos ainda.</div>:extratoFn(it.id).map(l=>{
+                    if(l.tipo==="transferencia"){
+                      const credito=l.contaDestinoId===it.id;
+                      const outraId=credito?l.contaOrigemId:l.contaDestinoId;
+                      const outraNome=((contasRef||[]).find(c=>c.id===outraId)||{}).nome||"?";
+                      return(
+                        <div key={l.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid var(--border)"}}>
+                          <span>{fmtDataBR(l.data)} · Transferência {credito?"de":"para"} {outraNome}{l.descricao?` · ${l.descricao}`:""}</span>
+                          <span style={{fontWeight:600,color:"var(--purple)"}}>{credito?"+":"−"}{brl(l.valor)}</span>
+                        </div>
+                      );
+                    }
+                    return(
+                      <div key={l.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid var(--border)"}}>
+                        <span>{fmtDataBR(l.data)} · {l.categoria}{l.descricao?` · ${l.descricao}`:""}</span>
+                        <span style={{fontWeight:600,color:l.tipo==="receita"?"var(--green)":"var(--red)"}}>{l.tipo==="receita"?"+":"−"}{brl(l.valor)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -216,26 +229,29 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
   const[contaId,setContaId]=useState("");
   const[dividaId,setDividaId]=useState("");
   const[contaVencerId,setContaVencerId]=useState("");
+  const[contaOrigemId,setContaOrigemId]=useState("");
+  const[contaDestinoId,setContaDestinoId]=useState("");
   const[descricao,setDescricao]=useState("");
   const[novaConta,setNovaConta]=useState({nome:"",saldoInicial:""});
   const formRef=useRef();
   useEffect(()=>{
     if(!editando)return;
     setTipo(editando.tipo);setValor(String(editando.valor));setData(editando.data);
-    setCategoria(editando.categoria);setContaId(editando.contaId||"");
+    setCategoria(editando.categoria||"");setContaId(editando.contaId||"");
     setDividaId(editando.dividaId||"");setContaVencerId(editando.contaVencerId||"");
+    setContaOrigemId(editando.contaOrigemId||"");setContaDestinoId(editando.contaDestinoId||"");
     setDescricao(editando.descricao||"");
     if(formRef.current)formRef.current.scrollIntoView({behavior:"smooth",block:"center"});
   },[editando]);
   useEffect(()=>{if(!contaId&&contas.length)setContaId(contas[0].id);},[contas]);
-  function handleTipo(t){setTipo(t);setCategoria(categorias[t][0]);}
+  function handleTipo(t){setTipo(t);if(t!=="transferencia")setCategoria(categorias[t][0]);}
   function criarConta(){
     if(!novaConta.nome.trim())return;
     onAddConta({nome:novaConta.nome.trim(),saldoInicial:Number(novaConta.saldoInicial)||0});
     setNovaConta({nome:"",saldoInicial:""});
   }
-  const precisaDivida=categoria==="Pagamento de dívida";
-  const precisaContaVencer=categoria==="Pagamento de conta a vencer";
+  const precisaDivida=tipo!=="transferencia"&&categoria==="Pagamento de dívida";
+  const precisaContaVencer=tipo!=="transferencia"&&categoria==="Pagamento de conta a vencer";
   function escolherContaVencer(id){
     setContaVencerId(id);
     const cv=contasAVencer.find(c=>c.id===id);
@@ -246,13 +262,21 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
   const travaCliqueDuplo=useRef(false); // clique duplo no Adicionar duplicava o lançamento
   function submit(){
     if(travaCliqueDuplo.current)return;
-    if(!contas.length){showToast("Cadastre uma conta primeiro (onde esse dinheiro está).","error");return;}
     if(!valor||Number(valor)<=0){showToast("Informe um valor válido.","error");return;}
-    if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
-    if(precisaContaVencer&&!contaVencerId){showToast("Selecione a conta a vencer que está sendo paga.","error");return;}
+    let payload;
+    if(tipo==="transferencia"){
+      if(contas.length<2){showToast("Cadastre pelo menos duas contas primeiro.","error");return;}
+      if(!contaOrigemId||!contaDestinoId){showToast("Selecione de onde e pra onde vai a transferência.","error");return;}
+      if(contaOrigemId===contaDestinoId){showToast("Escolha contas diferentes pra origem e destino.","error");return;}
+      payload={tipo,valor:Number(valor),data,contaOrigemId,contaDestinoId,descricao:descricao.trim()};
+    }else{
+      if(!contas.length){showToast("Cadastre uma conta primeiro (onde esse dinheiro está).","error");return;}
+      if(precisaDivida&&!dividaId){showToast("Selecione a dívida que está sendo paga.","error");return;}
+      if(precisaContaVencer&&!contaVencerId){showToast("Selecione a conta a vencer que está sendo paga.","error");return;}
+      payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,contaVencerId:precisaContaVencer?contaVencerId:undefined,descricao:descricao.trim()};
+    }
     travaCliqueDuplo.current=true;
     setTimeout(()=>{travaCliqueDuplo.current=false;},600);
-    const payload={tipo,valor:Number(valor),data,categoria,contaId,dividaId:precisaDivida?dividaId:undefined,contaVencerId:precisaContaVencer?contaVencerId:undefined,descricao:descricao.trim()};
     if(editando){
       onUpdate(editando.id,payload);
       onCancelEdit();
@@ -274,11 +298,18 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
       <div style={{display:"flex",gap:8,marginBottom:12}}>
         <Btn variant={tipo==="despesa"?"danger":"secondary"} onClick={()=>handleTipo("despesa")} style={{flex:1}}>Despesa</Btn>
         <Btn variant={tipo==="receita"?"primary":"secondary"} onClick={()=>handleTipo("receita")} style={{flex:1,...(tipo==="receita"?{background:"var(--green)",boxShadow:"none"}:{})}}>Receita</Btn>
+        <Btn variant={tipo==="transferencia"?"primary":"secondary"} onClick={()=>handleTipo("transferencia")} style={{flex:1,...(tipo==="transferencia"?{background:"var(--purple)",boxShadow:"none"}:{})}}>Transferência</Btn>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
         <div style={{flex:1,minWidth:110}}><FInput label="Valor" type="number" step="0.01" placeholder="0,00" value={valor} onChange={e=>setValor(e.target.value)}/></div>
         <div style={{flex:1,minWidth:130}}><FInput label="Data" type="date" value={data} onChange={e=>setData(e.target.value)}/></div>
       </div>
+      {tipo==="transferencia"?(
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          <div style={{flex:1,minWidth:130}}><FSelect label="De" value={contaOrigemId} onChange={e=>setContaOrigemId(e.target.value)}><option value="">Selecione</option>{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
+          <div style={{flex:1,minWidth:130}}><FSelect label="Para" value={contaDestinoId} onChange={e=>setContaDestinoId(e.target.value)}><option value="">Selecione</option>{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
+        </div>
+      ):(
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
         <div style={{flex:1,minWidth:150}}><FSelect label="Categoria" value={categoria} onChange={e=>setCategoria(e.target.value)}>{cats.map(c=><option key={c} value={c}>{c}</option>)}</FSelect></div>
         {contas.length===0?(
@@ -294,6 +325,7 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,onAdd,onUpdate,
           <div style={{flex:1,minWidth:130}}><FSelect label="Conta" value={contaId} onChange={e=>setContaId(e.target.value)}>{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</FSelect></div>
         )}
       </div>
+      )}
       {precisaDivida&&(
         <div style={{marginBottom:8}}><FSelect label="Qual dívida está sendo paga" value={dividaId} onChange={e=>setDividaId(e.target.value)}><option value="">Selecione</option>{dividas.map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</FSelect></div>
       )}
@@ -440,19 +472,22 @@ function ListaLancamentos({lancamentos,contas,dividas,onDelete,onEdit}){
       <div style={{fontSize:13,fontWeight:700,color:"var(--text2)",textTransform:"uppercase",letterSpacing:".04em",marginBottom:12}}>Lançamentos do mês</div>
       {lancamentos.length===0&&<div style={{fontSize:12,color:"var(--text3)"}}>Nenhum lançamento neste mês.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {lancamentos.map(l=>(
+        {lancamentos.map(l=>{
+          const transferencia=l.tipo==="transferencia";
+          return(
           <div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",background:"var(--surface2)",borderRadius:10}}>
             <div>
-              <div style={{fontWeight:600,fontSize:13}}>{l.categoria}{l.descricao?` · ${l.descricao}`:""}</div>
-              <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDataBR(l.data)} · {contaNome(l.contaId)}</div>
+              <div style={{fontWeight:600,fontSize:13}}>{transferencia?"Transferência":l.categoria}{l.descricao?` · ${l.descricao}`:""}</div>
+              <div style={{fontSize:11,color:"var(--text3)"}}>{fmtDataBR(l.data)} · {transferencia?`${contaNome(l.contaOrigemId)} → ${contaNome(l.contaDestinoId)}`:contaNome(l.contaId)}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontWeight:700,fontSize:13,color:l.tipo==="receita"?"var(--green)":"var(--red)"}}>{l.tipo==="receita"?"+":"−"}{brl(l.valor)}</div>
+              <div style={{fontWeight:700,fontSize:13,color:transferencia?"var(--purple)":l.tipo==="receita"?"var(--green)":"var(--red)"}}>{transferencia?"":l.tipo==="receita"?"+":"−"}{brl(l.valor)}</div>
               <button onClick={()=>onEdit(l)} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✎</button>
               <button onClick={()=>{if(confirm("Excluir este lançamento?"))onDelete(l.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </Card>
   );
@@ -556,7 +591,7 @@ function App(){
         <Card style={{flex:1,textAlign:"center",padding:14}}><div style={{fontSize:11,color:"var(--text3)",marginBottom:4}}>Saldo do mês</div><div style={{fontWeight:700}}>{brl(resumo.saldo)}</div></Card>
       </div>
 
-      <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} onAdd={addConta} onUpdate={updateConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
+      <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} contasRef={data.contas} onAdd={addConta} onUpdate={updateConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
 
       <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} parcelasFn={id=>resumoParcelas(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
 
