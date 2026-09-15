@@ -278,6 +278,18 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
     const d=dividas.find(x=>x.id===id);
     if(d&&d.valorParcela)setValor(String(d.valorParcela));
   }
+  // Valor tem que ser o total que realmente saiu da conta (parcela + juros, ou parcela - desconto) — recalcula
+  // sozinho a partir do valorParcela da dívida toda vez que o ajuste muda, pra não depender de soma manual.
+  function ajustarValorComBase(tipoAjuste,valorAjusteStr){
+    const d=dividas.find(x=>x.id===dividaId);
+    if(!d||!d.valorParcela)return;
+    const base=Number(d.valorParcela);
+    const ajuste=Number(valorAjusteStr)||0;
+    const novo=tipoAjuste==="juros"?base+ajuste:tipoAjuste==="desconto"?base-ajuste:base;
+    setValor(String(novo));
+  }
+  function handleAjusteTipo(t){setAjusteTipo(t);setAjusteValor("");ajustarValorComBase(t,"");}
+  function handleAjusteValor(v){setAjusteValor(v);ajustarValorComBase(ajusteTipo,v);}
   function escolherContaVencer(id){
     setContaVencerId(id);
     const cv=contasAVencer.find(c=>c.id===id);
@@ -371,13 +383,13 @@ function FormLancamento({contas,dividas,contasAVencer,categorias,parcelasFn,onAd
             </FSelect></div>
           )}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-            <div style={{flex:1,minWidth:150}}><FSelect label="Juros ou desconto?" value={ajusteTipo} onChange={e=>{setAjusteTipo(e.target.value);setAjusteValor("");}}>
+            <div style={{flex:1,minWidth:150}}><FSelect label="Juros ou desconto?" value={ajusteTipo} onChange={e=>handleAjusteTipo(e.target.value)}>
               <option value="nenhum">Nenhum</option>
               <option value="juros">Juros (não abate a dívida)</option>
               <option value="desconto">Desconto (abate a mais)</option>
             </FSelect></div>
             {ajusteTipo!=="nenhum"&&(
-              <div style={{flex:1,minWidth:120}}><FInput label={ajusteTipo==="juros"?"Valor do juros":"Valor do desconto"} type="number" step="0.01" placeholder="0,00" value={ajusteValor} onChange={e=>setAjusteValor(e.target.value)}/></div>
+              <div style={{flex:1,minWidth:120}}><FInput label={ajusteTipo==="juros"?"Valor do juros":"Valor do desconto"} type="number" step="0.01" placeholder="0,00" value={ajusteValor} onChange={e=>handleAjusteValor(e.target.value)}/></div>
             )}
           </div>
         </div>
