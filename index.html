@@ -113,7 +113,7 @@ function LoginScreen(){
 }
 
 const FORM_ENTIDADE_VAZIO={nome:"",saldoInicial:"",parcelas:"",valorParcela:"",descontoAntecipacao:"",primeiroVencimento:""};
-function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,situacaoFn,contasRef,onAdd,onUpdate,onDelete,expandido,setExpandido,cor}){
+function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,situacaoFn,contasRef,onAdd,onUpdate,onDelete,expandido,setExpandido,cor,onMover}){
   const[form,setForm]=useState(null); // FORM_ENTIDADE_VAZIO ou null — criação
   const[editId,setEditId]=useState(null); // id em edição
   const[editForm,setEditForm]=useState(FORM_ENTIDADE_VAZIO);
@@ -206,6 +206,7 @@ function SecaoEntidades({titulo,itens,tipoLabel,saldoFn,extratoFn,parcelasFn,sit
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <div style={{fontWeight:700,fontSize:13,color:cor(saldo)}}>{brl(saldo)}</div>
                   {vencBadge&&<span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:10,background:vencBg,color:vencCor,whiteSpace:"nowrap"}}>{vencBadge}</span>}
+                  {onMover&&<button onClick={e=>{e.stopPropagation();onMover.fn(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:11,whiteSpace:"nowrap"}}>{onMover.label}</button>}
                   <button onClick={e=>{e.stopPropagation();startEdit(it);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✎</button>
                   <button onClick={e=>{e.stopPropagation();if(confirm(`Excluir "${it.nome}"? Os lançamentos ligados a ela continuam no histórico.`))onDelete(it.id);}} style={{border:"none",background:"none",color:"var(--text3)",cursor:"pointer",fontSize:12}}>✕</button>
                 </div>
@@ -616,6 +617,7 @@ function App(){
   const[toast,setToast]=useState(null);
   const[expContas,setExpContas]=useState(null);
   const[expDividas,setExpDividas]=useState(null);
+  const[expEspera,setExpEspera]=useState(null);
   const[editando,setEditando]=useState(null); // lançamento em edição, ou null
 
   function showToast(msg,type){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
@@ -654,6 +656,10 @@ function App(){
   const addDivida=d=>persist({...data,dividas:[...data.dividas,{...d,id:uid()}]});
   const updateDivida=(id,d)=>persist({...data,dividas:data.dividas.map(x=>x.id===id?{...x,...d}:x)});
   const delDivida=id=>persist({...data,dividas:data.dividas.filter(d=>d.id!==id)});
+  // "Dívidas a haver": mesma lista, só com emEspera=true — ficam fora do total devedor e sem badge de vencimento na seção principal
+  const dividasAtivas=data.dividas.filter(d=>!d.emEspera);
+  const dividasEspera=data.dividas.filter(d=>d.emEspera);
+  const moverDivida=(id,emEspera)=>updateDivida(id,{emEspera});
   const contasAVencer=data.contasAVencer||[];
   const addContaVencer=c=>persist({...data,contasAVencer:[...contasAVencer,{...c,id:uid()}]});
   const updateContaVencer=(id,c)=>persist({...data,contasAVencer:contasAVencer.map(x=>x.id===id?{...x,...c}:x)});
@@ -706,7 +712,9 @@ function App(){
 
       <SecaoEntidades titulo="Contas — onde o dinheiro está" itens={data.contas} tipoLabel="conta" saldoFn={id=>saldoConta(data,id)} extratoFn={id=>extratoConta(data,id)} contasRef={data.contas} onAdd={addConta} onUpdate={updateConta} onDelete={delConta} expandido={expContas} setExpandido={setExpContas} cor={v=>v>=0?"var(--text)":"var(--red)"}/>
 
-      <SecaoEntidades titulo="Dívidas — o que você deve" itens={data.dividas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} parcelasFn={id=>resumoParcelas(data,id)} situacaoFn={id=>situacaoParcelas(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"}/>
+      <SecaoEntidades titulo="Dívidas — o que você deve" itens={dividasAtivas} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} parcelasFn={id=>resumoParcelas(data,id)} situacaoFn={id=>situacaoParcelas(data,id)} onAdd={addDivida} onUpdate={updateDivida} onDelete={delDivida} expandido={expDividas} setExpandido={setExpDividas} cor={v=>v>0?"var(--red)":"var(--green)"} onMover={{label:"→ a haver",fn:id=>moverDivida(id,true)}}/>
+
+      <SecaoEntidades titulo="Dívidas a haver — pretendo pagar um dia, não agora" itens={dividasEspera} tipoLabel="dívida" saldoFn={id=>saldoDivida(data,id)} extratoFn={id=>extratoDivida(data,id)} parcelasFn={id=>resumoParcelas(data,id)} situacaoFn={id=>situacaoParcelas(data,id)} onAdd={d=>addDivida({...d,emEspera:true})} onUpdate={updateDivida} onDelete={delDivida} expandido={expEspera} setExpandido={setExpEspera} cor={v=>v>0?"var(--red)":"var(--green)"} onMover={{label:"→ ativar",fn:id=>moverDivida(id,false)}}/>
 
       <SecaoContasAVencer itens={contasAVencer} situacaoFn={id=>situacaoContaVencer(data,id)} onAdd={addContaVencer} onUpdate={updateContaVencer} onDelete={delContaVencer}/>
 
